@@ -1,0 +1,8 @@
+{
+  "_comment": "活動率監控設定。memberId 為你在 Monitask 的成員 id（登入後 report URL 會帶著，非機密但屬個人）。填成自己的。",
+  "memberId": "REPLACE_WITH_YOUR_MONITASK_MEMBER_ID",
+  "timeOffSet": "Taipei Standard Time",
+  "earlyWindow": ["10:00", "20:00"],
+  "lateStart": "17:00",
+  "lateTailEnd": "01:00"
+}
