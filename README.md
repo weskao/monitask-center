@@ -36,6 +36,25 @@
 - **離座彈窗**:learn 模式尚未自動點,暫時自己點(見末段)。
 - 重開機:launchd 自動載入,免管。
 
+## 首次設定
+
+在專案目錄執行互動式設定程式：
+
+```bash
+./setup.sh
+```
+
+它會逐步檢查檔案、建立或更新 `.env`、引導開啟 macOS Accessibility 權限、載入 7 個 launchd job，最後顯示狀態與今日班表。有效的 Telegram 設定會保留，bot token 不會顯示在畫面上。
+
+也可以用 Makefile：
+
+```bash
+make setup
+make status
+```
+
+執行 `make help` 查看所有可用指令。
+
 ## 常用指令
 
 ```bash
@@ -75,6 +94,8 @@ launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.night-stop  # �
 | `pylibs/` | pyobjc(由 wheel 解壓,非 pip 安裝) |
 | `pyfix/sitecustomize.py` | 補 `platform.mac_ver()`(僅 pip 下載 wheel 時用到) |
 | `install.sh` | 產生/載入/卸載 launchd job |
+| `setup.sh` | 首次互動式設定與驗證 |
+| `Makefile` | 常用設定、管理與驗證指令 |
 | log | `~/Library/Application Support/MonitaskCenter/monitask.log` |
 
 ## 通知一覽
