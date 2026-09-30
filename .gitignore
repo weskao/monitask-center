@@ -286,3 +286,5 @@ pyrightconfig.json
 # ============================================================
 
 cython_debug/
+
+.codegraph/
