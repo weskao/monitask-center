@@ -11,42 +11,42 @@ LOG_FILE := $(HOME)/Library/Application Support/MonitaskCenter/monitask.log
 help:
 	@printf '%s\n' \
 		'Monitask Center commands:' \
-		'  make setup          Interactive first-time setup' \
-		'  make install       Install and load launchd jobs' \
+		'  make setup         Interactive first-time setup' \
+		'  make install       Complete first-time setup and load launchd jobs' \
 		'  make reload        Reload launchd jobs after changes' \
 		'  make uninstall     Stop and remove launchd jobs' \
 		'  make status        Show automation and Accessibility status' \
 		'  make plan          Show today/yesterday schedule actions' \
 		'  make logs          Follow the Monitask log' \
 		'  make dump-windows  Inspect Monitask windows and buttons' \
-		'  make check         Validate shell scripts'
+		'  make check         Validate scripts and run installer regression checks'
 
 setup:
-	@"$(SETUP)"
+	@/bin/bash "$(SETUP)"
 
-install:
-	@"$(INSTALL)" install
+install: setup
 
 reload:
-	@"$(INSTALL)" reload
+	@/bin/bash "$(INSTALL)" reload
 
 uninstall:
-	@"$(INSTALL)" uninstall
+	@/bin/bash "$(INSTALL)" uninstall
 
 status:
-	@"$(RUN)" status
-	@"$(INSTALL)" status
+	@/bin/bash "$(RUN)" status
+	@/bin/bash "$(INSTALL)" status
 
 plan:
-	@"$(RUN)" plan
+	@/bin/bash "$(RUN)" plan
 
 logs:
 	@tail -f "$(LOG_FILE)"
 
 dump-windows:
-	@"$(RUN)" dump-windows
+	@/bin/bash "$(RUN)" dump-windows
 
 check:
-	@bash -n "$(SETUP)" "$(INSTALL)" "$(RUN)"
+	@for script in "$(SETUP)" "$(INSTALL)" "$(RUN)" "$(PROJECT_DIR)/check-install.sh"; do bash -n "$$script" || exit; done
+	@bash "$(PROJECT_DIR)/check-install.sh"
 	@git -C "$(PROJECT_DIR)" diff --check
 	@echo "Checks passed."

@@ -38,19 +38,25 @@
 
 ## 首次設定
 
-在專案目錄執行互動式設定程式：
+在 macOS 上，先安裝 Homebrew（https://brew.sh），並安裝、登入 Monitask 桌面程式。在專案目錄只需執行：
 
 ```bash
-./setup.sh
+make install
 ```
 
-它會逐步檢查檔案、建立或更新 `.env`、引導開啟 macOS Accessibility 權限、載入 7 個 launchd job，最後顯示狀態與今日班表。有效的 Telegram 設定會保留，bot token 不會顯示在畫面上。
+它會自動安裝缺少的 Homebrew Python 3.13、修復本機 Python runner、安裝 PyObjC 到 `pylibs/`，再設定通知、引導開啟 macOS Accessibility 權限、載入 7 個 launchd job，最後顯示狀態與今日班表。首次下載依賴需要網路；再次執行會重用可用的 runtime 和依賴。`make setup` 或 `./setup.sh` 是相同入口。
+
+macOS 權限必須手動授予：在「系統設定 → 隱私權與安全性 → 輔助使用」加入並開啟本專案的 `MonitaskCenter.app`。尚未授權時安裝會停止，授權後重跑 `make install`。
+
+Telegram 是選用功能：只有本機存在 `~/.claude/scripts/tg-send.sh` 時才引導設定；否則使用 macOS 通知。有效的 Telegram 設定及 `.env` 其他設定會保留，bot token 不會顯示在畫面上。班表仍需自行維護，請確認 `schedule.json` 包含今天的班別。活動率監控 `activity/` 是獨立功能，不包含在這 7 個 job 中。
 
 也可以用 Makefile：
 
 ```bash
-make setup
 make status
+make reload     # 設定完成後，快速重載排程
+make uninstall  # 停止並移除排程
+make check      # 語法與安裝流程回歸檢查（不動本機排程）
 ```
 
 執行 `make help` 查看所有可用指令。
@@ -78,7 +84,8 @@ launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.night-stop  # �
 管理:
 
 ```bash
-~/monitask-center/install.sh install     # 首次安裝/載入
+make install                           # 完整首次安裝/設定
+~/monitask-center/install.sh install     # 已備妥 runtime/權限時，只載入排程
 ~/monitask-center/install.sh reload      # 改過程式碼或設定後重載(watch 會重啟吃新碼)
 ~/monitask-center/install.sh uninstall   # 全部停用並移除排程
 ```
@@ -91,10 +98,11 @@ launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.night-stop  # �
 | `run.sh` | launchd 進入點:載入 `.env` + `PYTHONPATH=pylibs`,再跑 monitask.py |
 | `MonitaskCenter.app` | 內含 python 副本;**AX 授權對象**(TCC 身分 `com.dannylin.monitask-center`),勿刪 |
 | `.env` | `TG_BOT_TOKEN` + `TG_CHAT_ID`(權限 600,`.gitignore` 排除) |
-| `pylibs/` | pyobjc(由 wheel 解壓,非 pip 安裝) |
+| `pylibs/` | setup 自動透過 pip 安裝的 PyObjC wheel |
 | `pyfix/sitecustomize.py` | 補 `platform.mac_ver()`(僅 pip 下載 wheel 時用到) |
 | `install.sh` | 產生/載入/卸載 launchd job |
-| `setup.sh` | 首次互動式設定與驗證 |
+| `setup.sh` | runtime/依賴準備、首次互動式設定與驗證 |
+| `check-install.sh` | 隔離環境的安裝流程回歸檢查 |
 | `Makefile` | 常用設定、管理與驗證指令 |
 | log | `~/Library/Application Support/MonitaskCenter/monitask.log` |
 
@@ -112,10 +120,9 @@ launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.night-stop  # �
 
 - **別移除已授權的 AX 項目**(`MonitaskCenter.app`,及先前加的 `python3.13`)——否則排程動作全失效。
 - **AX 是 launchd 能動 UI 的前提**:`MonitaskCenter.app` 必須在「系統設定 → 隱私權與安全性 → 輔助使用」開啟。launchd 一律經 `run.sh` 以 `/bin/bash` 呼叫 bundle 內 python(直接 exec bundle 執行檔會被當 app 啟動而失效)。
-- **brew 升級 python@3.13 小版號**會讓 bundle 內 python 副本連結的 framework 絕對路徑失效,需重建:
+- **brew 升級 python@3.13 小版號**可能讓 bundle 內 python 副本連結的 framework 絕對路徑失效。重跑安裝會修復 runner；重簽後可能需要重新授 AX:
   ```bash
-  cp /opt/homebrew/opt/python@3.13/bin/python3.13 ~/monitask-center/MonitaskCenter.app/Contents/MacOS/python-runner
-  codesign --force -s - ~/monitask-center/MonitaskCenter.app   # 重簽改 cdhash → 需重新授 AX
+  make install
   ```
 
 ## 唯一未收尾:離座彈窗自動點暫停(learn 模式)

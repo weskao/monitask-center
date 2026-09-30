@@ -90,7 +90,8 @@ do_install() {
     IFS=':' read -r name _ _ _ <<< "$job"
     local p; p="$(plist_path "$name")"
     launchctl bootout "gui/$UID_N" "$p" 2>/dev/null || true
-    launchctl bootstrap "gui/$UID_N" "$p" && echo "  loaded $PREFIX.$name"
+    launchctl bootstrap "gui/$UID_N" "$p"
+    echo "  loaded $PREFIX.$name"
   done
   echo "完成。用 './install.sh status' 檢查。"
 }
