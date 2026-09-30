@@ -13,8 +13,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # 對該 app 授一次 AX 即可。不可讓 launchd 直接 exec bundle 執行檔（會被當 app 啟動）。
 RUNNER="$HERE/run.sh"
 LA="$HOME/Library/LaunchAgents"
-PREFIX="com.dannylin.monitask-center"
-LEGACY_PREFIX="com.dannylin.monitask"
+PREFIX="com.monitask-center"
+LEGACY_PREFIXES=(
+  "com.dannylin.monitask-center"
+  "com.dannylin.monitask"
+)
 UID_N="$(id -u)"
 
 # label:排程(時:分, 或 watch):子命令
@@ -32,11 +35,14 @@ JOBS=(
 plist_path() { echo "$LA/$PREFIX.$1.plist"; }
 
 cleanup_legacy() {
-  for job in "${JOBS[@]}"; do
-    IFS=':' read -r name _ <<< "$job"
-    local legacy="$LA/$LEGACY_PREFIX.$name.plist"
-    launchctl bootout "gui/$UID_N" "$legacy" 2>/dev/null || true
-    rm -f "$legacy"
+  local prefix name legacy
+  for prefix in "${LEGACY_PREFIXES[@]}"; do
+    for job in "${JOBS[@]}"; do
+      IFS=':' read -r name _ <<< "$job"
+      legacy="$LA/$prefix.$name.plist"
+      launchctl bootout "gui/$UID_N" "$legacy" 2>/dev/null || true
+      rm -f "$legacy"
+    done
   done
 }
 

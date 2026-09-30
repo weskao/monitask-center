@@ -74,11 +74,11 @@ tail -f ~/Library/Application\ Support/MonitaskCenter/monitask.log   # 看歷程
 手動觸發(繞過時間；仍會依 schedule.json 判斷當天班別):
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.morning     # 早班：立刻輪詢開始
-launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.lunch       # 早班：立刻午休暫停
-launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.afternoon   # 早班：立刻繼續
-launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.night-start # 晚班：立刻輪詢開始
-launchctl kickstart -k gui/$(id -u)/com.dannylin.monitask-center.night-stop  # 晚班：立刻停止(需昨日=晚班)
+launchctl kickstart -k gui/$(id -u)/com.monitask-center.morning     # 早班：立刻輪詢開始
+launchctl kickstart -k gui/$(id -u)/com.monitask-center.lunch       # 早班：立刻午休暫停
+launchctl kickstart -k gui/$(id -u)/com.monitask-center.afternoon   # 早班：立刻繼續
+launchctl kickstart -k gui/$(id -u)/com.monitask-center.night-start # 晚班：立刻輪詢開始
+launchctl kickstart -k gui/$(id -u)/com.monitask-center.night-stop  # 晚班：立刻停止(需昨日=晚班)
 ```
 
 管理:

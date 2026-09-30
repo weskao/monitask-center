@@ -10,7 +10,7 @@ cleanup() {
   local result=$? name
   if [ "$result" -ne 0 ] && [ -f "$CHECK_DIR/output" ]; then cat "$CHECK_DIR/output" >&2; fi
   for name in morning lunch afternoon evening night-start night-stop watch; do
-    rm -f "$CHECK_DIR/home/Library/LaunchAgents/com.dannylin.monitask-center.$name.plist"
+    rm -f "$CHECK_DIR/home/Library/LaunchAgents/com.monitask-center.$name.plist"
   done
   rm -f "$PROJECT/Makefile" "$PROJECT/setup.sh" "$PROJECT/install.sh" "$PROJECT/run.sh" \
     "$PROJECT/schedule.json" "$PROJECT/.env" "$PROJECT/MonitaskCenter.app/Contents/Info.plist" \
@@ -68,7 +68,7 @@ case "$1" in
     /usr/bin/plutil -lint "$3" >/dev/null
     echo loaded >> "$CHECK_DIR/calls" ;;
   bootout) exit 0 ;;
-  list) echo 'com.dannylin.monitask-center.watch' ;;
+  list) echo 'com.monitask-center.watch' ;;
   *) exit 1 ;;
 esac
 SH

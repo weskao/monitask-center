@@ -6,16 +6,22 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RUNNER="$HERE/run.sh"
 LA="$HOME/Library/LaunchAgents"
-LABEL="com.dannylin.monitask-center.activity"
-LEGACY_LABEL="com.dannylin.monitask.activity"
+LABEL="com.monitask-center.activity"
+LEGACY_LABELS=(
+  "com.dannylin.monitask-center.activity"
+  "com.dannylin.monitask.activity"
+)
 UID_N="$(id -u)"
 LOGDIR="$HOME/Library/Application Support/MonitaskCenter"
 PLIST="$LA/$LABEL.plist"
-LEGACY_PLIST="$LA/$LEGACY_LABEL.plist"
 
 cleanup_legacy() {
-  launchctl bootout "gui/$UID_N" "$LEGACY_PLIST" 2>/dev/null || true
-  rm -f "$LEGACY_PLIST"
+  local legacy_label legacy_plist
+  for legacy_label in "${LEGACY_LABELS[@]}"; do
+    legacy_plist="$LA/$legacy_label.plist"
+    launchctl bootout "gui/$UID_N" "$legacy_plist" 2>/dev/null || true
+    rm -f "$legacy_plist"
+  done
 }
 
 gen_plist() {
