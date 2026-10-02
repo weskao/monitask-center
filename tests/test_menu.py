@@ -12,7 +12,7 @@ from monitask_center import config, i18n, launchd
 from monitask_center.i18n import t
 from monitask_center.tui import config_menu, keyreader, logo, menu, present
 
-WORDMARK = frozenset(logo.BIG + logo.SMALL)
+WORDMARK = frozenset(logo.THICK + logo.BIG + logo.SMALL)
 
 
 def _is_wordmark(line: str) -> bool:
@@ -416,7 +416,7 @@ def test_logo_panel_never_overflows_in_any_size(monkeypatch, columns, lines, col
         assert len(panel) < lines
         assert all(present.width(line) <= columns - 1 for line in panel)
         wordmark = [line for line in panel if _is_wordmark(present.strip_ansi(line))]
-        assert len(wordmark) in (0, len(logo.SMALL), len(logo.BIG))  # atomic: never a partial wordmark
+        assert len(wordmark) in (0, len(logo.SMALL), len(logo.BIG), len(logo.THICK))  # atomic: never a partial wordmark
 
 
 def test_the_logo_shows_at_80x24_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):

@@ -9,7 +9,7 @@ from monitask_center.tui import logo, present
 SGR = re.compile(r"\x1b\[38;5;(\d+)m")
 
 
-@pytest.mark.parametrize(("rows", "wide", "high"), [(logo.BIG, 67, 4), (logo.SMALL, 43, 3)])
+@pytest.mark.parametrize(("rows", "wide", "high"), [(logo.THICK, 98, 5), (logo.BIG, 67, 4), (logo.SMALL, 43, 3)])
 def test_every_tier_row_has_the_declared_width(rows, wide, high):
     assert len(rows) == high
     assert {len(row) for row in rows} == {wide}
@@ -17,14 +17,15 @@ def test_every_tier_row_has_the_declared_width(rows, wide, high):
 
 
 def test_colour_off_returns_the_rows_unchanged_and_without_escapes():
-    for columns, rows in ((100, logo.BIG), (50, logo.SMALL)):
+    for columns, rows in ((120, logo.THICK), (100, logo.BIG), (50, logo.SMALL)):
         out = logo.lines(columns, False)
         assert out == [" " * logo.indent(columns, rows) + row for row in rows]
         assert not any("\x1b" in line for line in out)
 
 
 @pytest.mark.parametrize(("columns", "rows"), [
-    (45, ()), (46, logo.SMALL), (69, logo.SMALL), (70, logo.BIG), (200, logo.BIG),
+    (45, ()), (46, logo.SMALL), (69, logo.SMALL), (70, logo.BIG),
+    (100, logo.BIG), (101, logo.THICK), (200, logo.THICK),
 ])
 def test_tier_switches_at_the_exact_boundaries(columns, rows):
     assert logo.tier(columns) == rows
@@ -50,9 +51,11 @@ def test_gradient_runs_from_amber_to_teal():
 
 
 @pytest.mark.parametrize(("columns", "lines", "rows"), [
-    (100, None, logo.BIG), (100, 25, logo.BIG), (100, 24, logo.SMALL), (50, 40, logo.SMALL), (45, 40, ()),
+    (120, None, logo.THICK), (120, 26, logo.THICK), (120, 25, logo.BIG),
+    (100, None, logo.BIG), (100, 25, logo.BIG), (100, 24, logo.SMALL),
+    (50, 40, logo.SMALL), (45, 40, ()),
 ])
-def test_big_tier_also_needs_enough_rows_when_the_height_is_fixed(columns, lines, rows):
+def test_a_tier_also_needs_enough_rows_when_the_height_is_fixed(columns, lines, rows):
     assert logo.tier(columns, lines) == rows
 
 
@@ -72,7 +75,7 @@ def test_tagline_key_exists_is_short_and_is_what_the_menu_draws(monkeypatch):
     assert any(text in line for line in menu._main_lines(state, 0, Tty()))
 
 
-@pytest.mark.parametrize("columns", [46, 69, 70, 80, 120, 200])
+@pytest.mark.parametrize("columns", [46, 69, 70, 80, 101, 120, 200])
 def test_logo_is_centred_over_the_panel_and_never_wraps(columns):
     rows = logo.tier(columns)
     panel = columns - 1
