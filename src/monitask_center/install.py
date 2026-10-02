@@ -1,4 +1,4 @@
-"""First-time setup (stdlib only): runtime, PyObjC, optional Telegram, Accessibility, launchd.
+"""First-time setup: runtime, PyObjC, Telegram, Accessibility, launchd.
 
 Port of the old setup.sh. Idempotent: a repeat run only repairs what is broken, so the
 MonitaskCenter.app identity (and its Accessibility grant) survives. Never controls Monitask.
@@ -8,25 +8,27 @@ from __future__ import annotations
 
 import getpass
 import os
-import re
 import shutil
 import subprocess
 import sys
-import tempfile
+from dataclasses import replace
 from pathlib import Path
 
-from . import config, launchd
+from . import config, launchd, telegram
 from .i18n import t
 from .status import parse_kv, run_status
 
 BREW_FALLBACKS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
 FORMULA = "python@3.13"
-PIP_PACKAGES = ("pyobjc-framework-Cocoa", "pyobjc-framework-ApplicationServices", "pyobjc-framework-Quartz")
-IMPORT_PROBE = "import AppKit, ApplicationServices, Foundation, Quartz"
+# telegram-kit rides along with PyObjC so launchd's bare python finds it on PYTHONPATH:
+# run.sh exports src:pylibs, not the uv venv the CLI runs from.
+PIP_PACKAGES = ("pyobjc-framework-Cocoa", "pyobjc-framework-ApplicationServices",
+                "pyobjc-framework-Quartz", "telegram-kit>=0.2.0,<0.3")
+IMPORT_PROBE = "import AppKit, ApplicationServices, Foundation, Quartz, telegram_kit"
 AX_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-TOKEN_RE = re.compile(r"^[0-9]+:[A-Za-z0-9_-]+$")
-CHAT_RE = re.compile(r"^-?[0-9]+$")
-ENV_KEYS = ("TG_BOT_TOKEN", "TG_CHAT_ID")
+TOKEN_RE = telegram.TOKEN_RE
+CHAT_RE = telegram.CHAT_RE
+ENV_KEYS = telegram.ENV_KEYS
 
 
 class InstallError(Exception):
@@ -126,76 +128,61 @@ def prepare_runtime(p: Paths) -> None:
     print(t("install.runtime.ok"))
 
 
-def _env_lines(path: Path) -> list[str]:
-    try:
-        return path.read_text(encoding="utf-8").splitlines(keepends=True)
-    except OSError:
-        return []
+def _store_token(p: Paths, value: str) -> bool:
+    """Persist the bot token in the credential store, falling back to *.env* without one.
 
-
-def _env_value(lines: list[str], key: str) -> str:
-    for line in lines:
-        if line.startswith(f"{key}="):
-            return line[len(key) + 1:].rstrip("\r\n")
-    return ""
+    The store is the mechanism ``--config`` uses too; *.env* is only reached when the
+    machine has no store to write to, so a token is never silently left in plaintext on a
+    machine that could have kept it out of the config file.
+    """
+    if telegram.set_token(value):
+        return True
+    lines = telegram.env_lines(p.env)
+    body = f"{telegram.ENV_KEYS[0]}={value}\n"
+    chat = telegram.env_value(lines, telegram.ENV_KEYS[1]).strip()
+    if chat:
+        body += f"{telegram.ENV_KEYS[1]}={chat}\n"
+    telegram.write_env(p.env, telegram.strip_env_keys(lines), body)
+    print(t("install.tg.saved_env", backend=telegram.backend_label()))
+    return True
 
 
 def configure_telegram(p: Paths, settings: config.Settings, *, getpass_fn, input_fn, confirm) -> None:
-    helper = Path.home() / ".claude/scripts/tg-send.sh"
-    if not helper.exists():
-        return print(t("install.tg.unavailable"))
     if not settings.telegram:
         return print(t("install.tg.disabled"))
-    lines = _env_lines(p.env)
-    token, chat = (_env_value(lines, k) for k in ENV_KEYS)
-    token_ok, chat_ok = bool(TOKEN_RE.match(token)), bool(CHAT_RE.match(chat))
-    if token_ok and chat_ok:
-        os.chmod(p.env, 0o600)
-        print(t("install.tg.valid"))
-        return _send_test(p, helper)
+    # A token already sitting in .env moves into the credential store, so the next run has
+    # one mechanism rather than two. A store that already holds one wins and .env is left be.
+    if telegram.migrate_env_token(p.env):
+        print(t("install.tg.migrated"))
+    token, chat = telegram.resolve(settings.telegram_chat_id)
+    if TOKEN_RE.match(token) and CHAT_RE.match(chat):
+        print(t("install.tg.valid", backend=telegram.backend_label()))
+        return _send_test(settings)
     if not confirm(t("install.tg.ask")):
         return print(t("install.tg.declined"))
-    if token_ok:
+    if TOKEN_RE.match(token):
         print(t("install.tg.token_kept"))
     else:
         print(t("install.tg.need_token"))
         token = getpass_fn(t("install.tg.prompt_token")).strip()
         if not TOKEN_RE.match(token):
             raise InstallError(t("install.err.token_format"))
-    if chat_ok:
+        _store_token(p, token)
+    if CHAT_RE.match(chat):
         print(t("install.tg.chat_kept"))
     else:
         chat = input_fn(t("install.tg.prompt_chat")).strip()
         if not CHAT_RE.match(chat):
             raise InstallError(t("install.err.chat_format"))
-    kept = [ln for ln in lines if not ln.startswith(tuple(f"{k}=" for k in ENV_KEYS))]
-    if kept and not kept[-1].endswith("\n"):
-        kept[-1] += "\n"
-    body = "".join(kept) + f"TG_BOT_TOKEN={token}\nTG_CHAT_ID={chat}\n"
-    old_mask = os.umask(0o077)
-    try:
-        fd, tmp = tempfile.mkstemp(dir=p.root, prefix=".env.setup.")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(body)
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, p.env)
-        except BaseException:
-            Path(tmp).unlink(missing_ok=True)
-            raise
-    finally:
-        os.umask(old_mask)
+    if settings.telegram_chat_id != chat:  # the chat id is not a secret: it lives in config.json
+        config.save(config.validate(replace(settings, telegram_chat_id=chat)))
     print(t("install.tg.saved"))
-    _send_test(p, helper)
+    _send_test(replace(settings, telegram_chat_id=chat))
 
 
-def _send_test(p: Paths, helper: Path) -> None:
+def _send_test(settings: config.Settings) -> None:
     """Fire one test message; delivery is not checked, the user confirms it on Telegram."""
-    try:
-        _run(["/bin/bash", str(helper), "send", t("install.tg.test_message")], cwd=p.root,
-             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=45)
-    except subprocess.TimeoutExpired:
-        pass
+    telegram.send(t("install.tg.test_message"), settings.telegram_chat_id)
     print(t("install.tg.test_sent"))
 
 

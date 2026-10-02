@@ -5,7 +5,7 @@ description = "Workday Monitask timer checks driven by launchd"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Wes Kao" }]
-dependencies = []
+dependencies = ["telegram-kit>=0.2.0,<0.3"]
 
 [project.scripts]
 monitask-center = "monitask_center.cli:main"

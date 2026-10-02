@@ -20,9 +20,8 @@
   "install.files.ok": "✅ 必要檔案齊全",
   "install.runtime.rebuilt": "已重建 Python 執行檔,輔助使用權限可能需要重新啟用",
   "install.runtime.ok": "✅ Python 執行環境正常",
-  "install.tg.unavailable": "找不到 Telegram 工具,改用 macOS 通知(.env 維持不變)",
   "install.tg.disabled": "設定已停用 Telegram,略過(.env 維持不變)",
-  "install.tg.valid": "✅ Telegram 設定已完成(內容保持隱藏且不變)",
+  "install.tg.valid": "✅ Telegram 設定已完成(token 存放於 {backend},內容保持隱藏)",
   "install.tg.ask": "要設定選用的 Telegram 通知嗎?",
   "install.tg.declined": "使用 macOS 通知(.env 維持不變)",
   "install.tg.need_token": "Telegram 通知需要機器人 token",
@@ -30,7 +29,7 @@
   "install.tg.chat_kept": "chat ID 已設定(保持不變)",
   "install.tg.prompt_token": "TG_BOT_TOKEN: ",
   "install.tg.prompt_chat": "TG_CHAT_ID: ",
-  "install.tg.saved": "✅ 已將 Telegram 設定存入 .env(僅限本人讀寫)",
+  "install.tg.saved": "✅ 已將 Telegram 設定寫入設定檔與認證存放區",
   "install.ax.ok": "✅ 輔助使用權限已啟用",
   "install.ax.needed": "需要輔助使用權限才能讀取 Monitask 狀態,請啟用名為 MonitaskCenter.app 的項目後回到這裡",
   "install.ax.open_ask": "現在開啟輔助使用設定嗎?",
@@ -99,5 +98,7 @@
   "status.action.locked": "略過(螢幕已鎖定)",
   "install.err.verify": "最終驗證未通過,請執行 monitask-center status 檢查排程",
   "install.tg.test_message": "🔔 Monitask Center 測試通知:收到這則訊息代表 Telegram 通知設定正常",
-  "install.tg.test_sent": "📨 已發送 Telegram 測試通知,請自行確認是否收到(未收到請檢查 .env 的 token 與 chat ID)"
+  "install.tg.test_sent": "📨 已發送 Telegram 測試通知,請自行確認是否收到(未收到請檢查 token 與 chat ID)",
+  "install.tg.migrated": "已將 .env 的 token 移入認證存放區",
+  "install.tg.saved_env": "⚠️ 本機沒有認證存放區({backend}),token 已改存於 .env(僅限本人讀寫)"
 }

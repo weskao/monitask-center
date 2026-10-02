@@ -41,7 +41,7 @@ monitask-center install          # 一次完成其餘設定
 
 - **執行環境全自動**：缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；`MonitaskCenter.app` 內的 python runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **Accessibility 必須手動授予給 `MonitaskCenter.app`**：到「系統設定 → 隱私權與安全性 → 輔助使用」加入並開啟它(安裝程式可替你開啟該設定頁)。未授權時安裝會停止，授權後重跑 `monitask-center install`。
-- **Telegram 是選用功能**：只有本機存在 `~/.claude/scripts/tg-send.sh` 且設定中 telegram 為開時才引導設定，token 與 chat id 存於專案目錄 `.env`(權限 600，已被 `.gitignore` 排除，範例見 `.env.example`)。Telegram 設定完成(新存入或沿用既有設定)後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。否則使用 macOS 通知。
+- **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入專案目錄 `.env`(權限 600，已被 `.gitignore` 排除，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。Telegram 關閉或傳送失敗時退回 macOS 通知。
 
 ## 設定:`monitask-center --config`
 
@@ -119,7 +119,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | `src/monitask_center/locales/<lang>/*.json` | 各語言文字(目前 `zh-TW`) |
 | `tests/` | pytest 測試(含 i18n 守門) |
 | `activity/` | 活動率監控，**獨立的選用功能**，與本工具的 launchd job 無關 |
-| `.env` | `TG_BOT_TOKEN` + `TG_CHAT_ID`(不入版控) |
+| `.env` | 僅在無認證存放區時的後備：`TG_BOT_TOKEN` + `TG_CHAT_ID`(不入版控) |
 | `~/.monitask-center/config.json` | 使用者設定(單一檔案，不放在專案目錄) |
 | `~/.monitask-center/last-check.json` | 上次檢查結果 |
 | `~/.monitask-center/holidays/` | 政府行事曆快取(每年一檔) |
@@ -146,7 +146,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | 政府行事曆無法取得(fail-open) | 警告，每天最多一次 |
 | 計時中 / 視窗隱藏 / 午休 / 放假 / 休假 / 時段外 | 不通知，只寫日誌 |
 
-通知先走 `~/.claude/scripts/tg-send.sh`(Telegram；`.env` 提供 token，cwd 固定在本專案目錄；訊息附主機名)，Telegram 關閉、不可用或失敗時退回 macOS 通知中心。只發文字，不截圖、不外傳畫面內容。
+通知先走 Telegram(`telegram-kit` 直連 Bot API；token 取自認證存放區，其次為 `.env` 的 `TG_BOT_TOKEN`；chat id 取自 `config.json`，其次為 `TG_CHAT_ID`；訊息附主機名)，Telegram 關閉或傳送失敗時退回 macOS 通知中心。只發文字，不截圖、不外傳畫面內容。
 
 ## 維護注意
 

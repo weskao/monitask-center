@@ -1,4 +1,9 @@
-"""Logging and notifications (stdlib only): Telegram via tg-send.sh, macOS fallback."""
+"""Logging and notifications: Telegram via telegram_kit, macOS fallback.
+
+The token is read from the OS credential store (falling back to ``TG_BOT_TOKEN`` in the
+environment, which run.sh populates from ``.env``), so no notification path needs a
+helper script or a checkout-relative ``.env``.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +12,9 @@ import os
 import socket
 import subprocess
 from datetime import datetime
-from pathlib import Path
 
-from . import config
+from . import config, telegram
 from .i18n import t
-
-TG_SEND = Path.home() / ".claude/scripts/tg-send.sh"
 
 
 def log(message: str) -> None:
@@ -25,11 +27,6 @@ def log(message: str) -> None:
         pass
     if os.environ.get("MONITASK_CENTER_LOG_STDOUT") == "1":  # stdout would corrupt TUI redraws
         print(line)
-
-
-def run(command: list[str], timeout: int = 30, cwd=None) -> subprocess.CompletedProcess:
-    return subprocess.run(command, text=True, stdout=subprocess.DEVNULL,
-                          stderr=subprocess.DEVNULL, timeout=timeout, check=False, cwd=cwd)
 
 
 @functools.cache
@@ -72,25 +69,20 @@ def macos_notification(message: str, title: str = "Monitask") -> None:
         log(t("notify.macos_failed", code=r.returncode, detail=(r.stderr or "").strip()))
 
 
-def telegram(message: str) -> bool:
-    if not TG_SEND.is_file():
-        return False
-    try:
-        # tg-send.sh locates .env via git rev-parse, so cwd must be this checkout.
-        # TG_BOT_TOKEN / TG_CHAT_ID come from .env loaded by run.sh.
-        cwd = config.PROJECT_ROOT
-        if run(["/bin/bash", str(TG_SEND), "preflight"], timeout=12, cwd=cwd).returncode != 0:
-            return False
-        return run(["/bin/bash", str(TG_SEND), "send", message], timeout=45, cwd=cwd).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+def telegram_message(message: str, chat_id: str = "") -> bool:
+    """Send one Telegram message. ``False`` on missing credentials or any failure.
+
+    Credentials come from :func:`monitask_center.telegram.send`, so a token saved through
+    ``--config`` and one left in ``.env`` are both honoured, in that order.
+    """
+    return telegram.send(message, chat_id)
 
 
-def notify(message: str, use_telegram: bool = True) -> None:
+def notify(message: str, use_telegram: bool = True, chat_id: str = "") -> None:
     delivered = False
     if use_telegram:
         try:
-            delivered = telegram(f"{message}\n🖥️ {host_name()}")
+            delivered = telegram_message(f"{message}\n🖥️ {host_name()}", chat_id)
         except Exception as exc:  # noqa: BLE001 - a notification must never crash a job
             log(t("notify.telegram_error", error=exc))
     if not delivered:

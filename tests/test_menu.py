@@ -8,7 +8,7 @@ from collections import deque
 
 import pytest
 
-from monitask_center import config, i18n, launchd
+from monitask_center import config, i18n, launchd, telegram
 from monitask_center.i18n import t
 from monitask_center.tui import config_menu, keyreader, logo, menu, present
 
@@ -18,6 +18,15 @@ WORDMARK = frozenset(logo.THICK + logo.BIG + logo.SMALL)
 def _is_wordmark(line: str) -> bool:
     """A logo row behind its centring margin (blank lead, then exactly one tier row)."""
     return any(line.endswith(row) and not line[:-len(row)].strip() for row in WORDMARK)
+
+
+def n(key: str) -> str:
+    """The 1-based row number for a ROWS *key*, so a script never hardcodes an index.
+
+    Adding or reordering a row would otherwise silently repoint a numbered script at the
+    wrong setting.
+    """
+    return str(next(i for i, row in enumerate(menu.ROWS, 1) if row.key == key))
 
 SGR = re.compile(r"\x1b\[[0-9;]*m")
 REDRAW = re.compile(r"\x1b\[\d+A\r\x1b\[J")
@@ -105,6 +114,74 @@ def replace_settings(**kw):
     return replace(config.Settings(), **kw)
 
 
+# ── the Telegram rows: the token is a secret, the chat id is not ───────────────
+
+
+def test_the_token_row_never_shows_the_token_and_a_saved_one_is_masked(no_real_keychain):
+    no_real_keychain[telegram.TOKEN_KEY] = "1234567890:AAAABBBBCCCC"
+    _, output = numbered("q\n")
+    assert "1234567890" not in output and "AAAABBBB" not in output
+    assert telegram.mask("1234567890:AAAABBBBCCCC") in output  # stars + the last 4 only
+
+
+def test_a_saved_token_goes_to_the_credential_store_never_to_config(no_real_keychain, monkeypatch):
+    monkeypatch.setattr(telegram, "read_token", lambda prompt: "123:typed_token")
+    numbered(f"{n('telegram_token')}\n\nq\n")
+    assert no_real_keychain.get(telegram.TOKEN_KEY) == "123:typed_token"
+    on_disk = (config.config_path().read_text(encoding="utf-8")
+               if config.config_path().exists() else "")
+    assert "typed_token" not in on_disk
+
+
+def test_a_malformed_token_is_refused_and_nothing_is_stored(no_real_keychain, monkeypatch):
+    monkeypatch.setattr(telegram, "read_token", lambda prompt: "not-a-token")
+    rc, output = numbered(f"{n('telegram_token')}\n\nq\n")
+    assert no_real_keychain.get(telegram.TOKEN_KEY) is None  # refused, not half-saved
+    assert t("tui.error.token_format") in output
+
+
+def test_blank_keeps_the_existing_token(no_real_keychain, monkeypatch):
+    no_real_keychain[telegram.TOKEN_KEY] = "123:already_here"
+    monkeypatch.setattr(telegram, "read_token", lambda prompt: "")
+    numbered(f"{n('telegram_token')}\n\nq\n")
+    assert no_real_keychain.get(telegram.TOKEN_KEY) == "123:already_here"
+
+
+def test_without_a_store_the_token_is_refused_with_a_pointer_to_the_env(no_real_keychain, monkeypatch):
+    monkeypatch.setattr(telegram, "read_token", lambda prompt: "123:typed")
+    monkeypatch.setattr(telegram, "set_token", lambda v: False)
+    rc, output = numbered(f"{n('telegram_token')}\n\nq\n")
+    assert no_real_keychain.get(telegram.TOKEN_KEY) is None
+    assert t("tui.error.no_store", backend="test store") in output
+
+
+def test_resetting_the_token_row_clears_the_store(monkeypatch, no_real_keychain):
+    no_real_keychain[telegram.TOKEN_KEY] = "123:remove_me"
+    rc, output = numbered(f"r{n('telegram_token')}\ny\nq\n")
+    assert no_real_keychain.get(telegram.TOKEN_KEY) is None  # gone from the store
+    assert t("tui.reset_done") in output
+
+
+def test_the_chat_id_row_saves_to_config_json(no_real_keychain):
+    numbered(f"{n('telegram_chat')}\n-1001234\nq\n")
+    assert config.load().telegram_chat_id == "-1001234"  # an identifier, so plain JSON
+
+
+def test_a_malformed_chat_id_is_refused_and_config_is_untouched():
+    rc, output = numbered(f"{n('telegram_chat')}\n@channel\nq\n")
+    assert t("tui.error.chat_format") in output
+    assert not config.config_path().exists()
+
+
+def test_the_secret_is_never_echoed_by_the_tui_either(monkeypatch, no_real_keychain):
+    # Typing in the TUI draws one "*" per character, so the raw value cannot reach the screen.
+    down = int(n("telegram_token")) - 1
+    rc, output = run_tui(monkeypatch, ["down"] * down + ["enter", *"1", *"2", *"3",
+                                                        "enter", "quit"])
+    assert "123" not in output.replace("\x1b", "")  # masked as it was typed
+    assert telegram.TOKEN_KEY not in no_real_keychain  # "123" is not a valid token
+
+
 def test_non_tty_output_has_no_escape_bytes():
     rc, output = numbered("1\n9\n9\na 2026-10-05\n\nq\n", status)
     assert rc == 0
@@ -155,14 +232,14 @@ def test_interval_is_clamped_to_the_window(monkeypatch):
 
 
 def test_vacation_add_range_remove_roundtrip():
-    script = "9\na 2026-10-05~2026-10-07\na 2026/12/25\nd 2026-10-06\na 2026-13-01\nd 2027-01-01\nzz\n\nq\n"
+    script = n("vacation") + "\na 2026-10-05~2026-10-07\na 2026/12/25\nd 2026-10-06\na 2026-13-01\nd 2027-01-01\nzz\n\nq\n"
     rc, output = numbered(script)
     assert rc == 0
     assert config.load().vacation == ("2026-10-05", "2026-10-07", "2026-12-25")
     assert t("tui.error.vacation_date") in output
     assert t("tui.vacation.missing", day="2027-01-01") in output
     assert t("tui.error.vacation_command") in output
-    numbered("9\na 2026-01-01~2027-06-01\n\nq\n")
+    numbered(n("vacation") + "\na 2026-01-01~2027-06-01\n\nq\n")
     assert len(config.load().vacation) == 3  # over-long range rejected, nothing saved
 
 
@@ -177,7 +254,8 @@ def test_vacation_submenu_in_the_tui(monkeypatch):
 
 
 def test_sync_runs_only_for_schedule_changes(launchd_calls):
-    script = "4\n5\n11\n6\n14\n7\n8\n9\na 2026-10-05\n\n"  # lunch, language, telegram, vacation
+    # lunch, language, telegram, vacation: none of these move the launchd schedule
+    script = "4\n5\n%s\n6\n14\n7\n8\n%s\na 2026-10-05\n\n" % (n("language"), n("vacation"))
     _, output = numbered(script + "q\n")
     assert launchd_calls == []
     _, output = numbered("1\n9\n2\n17\n3\n2\nq\n")
@@ -198,7 +276,7 @@ def test_sync_failure_is_shown_not_raised(monkeypatch):
 
 
 def test_reset_needs_confirmation_and_keeps_vacation():
-    numbered("1\n9\n9\na 2026-10-05\n\nr1\nn\nq\n")
+    numbered("1\n9\n%s\na 2026-10-05\n\nr1\nn\nq\n" % n("vacation"))
     assert config.load().start_hour == 9
     numbered("r1\ny\nq\n")
     assert config.load().start_hour == 10
@@ -215,7 +293,7 @@ def test_tui_reset_row_with_confirm(monkeypatch):
 
 
 def test_read_only_row_changes_nothing():
-    _, output = numbered("10\nr10\nq\n")
+    _, output = numbered(f"{n('install')}\nr{n('install')}\nq\n")
     assert t("tui.readonly") in output and t("tui.nothing_to_reset") in output
     assert not config.config_path().exists()
 
@@ -419,9 +497,10 @@ def test_logo_panel_never_overflows_in_any_size(monkeypatch, columns, lines, col
         assert len(wordmark) in (0, len(logo.SMALL), len(logo.BIG), len(logo.THICK))  # atomic: never a partial wordmark
 
 
-def test_the_logo_shows_at_80x24_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):
-    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 24, False)[0]]
-    assert " " * logo.indent(80, logo.SMALL) + logo.SMALL[0] in plain  # 24 rows: the 3-row tier keeps both status lines
+def test_the_logo_shows_at_80x26_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):
+    # 12 setting rows: logo + both status lines now needs 26 rows, not 24.
+    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 26, False)[0]]
+    assert " " * logo.indent(80, logo.SMALL) + logo.SMALL[0] in plain  # the 3-row tier keeps both status lines
     assert t("tui.tagline") not in "\n".join(plain)
     assert any("monitask: timing" in line for line in plain)
     assert any("last check 10:00" in line for line in plain)
@@ -435,7 +514,7 @@ def test_numbered_fallback_with_a_tty_stdout_emits_no_escape_byte(monkeypatch):
     monkeypatch.delenv("NO_COLOR", raising=False)
     config.save(replace_settings(vacation=("2026-10-05",)))
     out = FakeTty()  # stdout is a terminal, stdin is not: the numbered surface
-    rc = config_menu(stdin=io.StringIO("10\n9\n\nq\n"), stdout=out, status_lines=status)
+    rc = config_menu(stdin=io.StringIO(f"{n('vacation')}\n9\n\nq\n"), stdout=out, status_lines=status)
     assert rc == 0 and "\x1b" not in out.getvalue()
     # The numbered surface has no terminal size, so it falls back to 80x24 -- narrow enough
     # that BIG (needs 92 columns) does not fit. Assert a whole tier is present, not which.
@@ -461,7 +540,9 @@ def test_interactive_surface_keeps_colour_and_no_color_still_wins(monkeypatch):
 
 
 @pytest.mark.parametrize("columns,lines,logo_shown", [
-    (63, 20, False), (63, 22, True), (46, 20, False), (46, 21, False), (46, 22, True), (45, 20, False),
+    # 12 setting rows now, so the status block needs 22 rows and the logo 24. Notes drop
+    # before rows (present.compose), so below 22 the status line is what goes, not a row.
+    (63, 22, False), (63, 24, True), (46, 22, False), (46, 24, True), (45, 22, False), (45, 24, False),
 ])
 def test_monitask_status_line_outranks_the_logo_on_short_terminals(monkeypatch, columns, lines, logo_shown):
     for panel in _panel(monkeypatch, columns, lines, False):

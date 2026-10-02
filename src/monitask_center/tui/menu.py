@@ -20,7 +20,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import IO
 
-from .. import config, i18n, launchd
+from .. import config, i18n, launchd, telegram
 from ..i18n import t
 from . import keyreader, logo, present
 
@@ -48,10 +48,17 @@ ROWS = (
     Row("lunch_end", "hour", "lunch_end_hour", 1, 24),
     Row("language", "language", "language"),
     Row("telegram", "toggle", "telegram"),
+    # The token is the only secret: it is NOT a Settings field, so `field` is empty and the
+    # value lives in the OS credential store. `text` is the ordinary chat id in config.json.
+    Row("telegram_token", "secret"),
+    Row("telegram_chat", "text", "telegram_chat_id"),
     Row("vacation", "vacation", "vacation"),
     Row("install", "install"),
 )
 ADJUSTABLE = ("hour", "interval", "toggle", "language")
+# Rows edited by typing rather than by stepping a value.
+TYPED = ("text", "secret")
+TEXT_MAX = 128  # a pasted token/chat id, not a format check (telegram_kit's own bound)
 VACATION = next(row for row in ROWS if row.kind == "vacation")
 
 
@@ -118,6 +125,14 @@ def _value(state: State, row: Row, s: config.Settings | None = None) -> str:
         return f"{t('tui.language.self', v)} ({v})"
     if row.kind == "vacation":
         return t("tui.value.vacation", count=len(v)) if v else t("tui.value.vacation_none")
+    if row.kind == "secret":
+        stored = telegram.token()  # never the raw value: masked, or where it comes from
+        if stored:
+            return telegram.mask(stored)
+        return (t("tui.value.from_env") if os.environ.get(telegram.ENV_KEYS[0])
+                else t("tui.value.unset"))
+    if row.kind == "text":
+        return v or os.environ.get(telegram.ENV_KEYS[1]) or t("tui.value.unset")
     installed, loaded = state.install()
     if not installed:
         return t("tui.install.not_installed")
@@ -194,21 +209,85 @@ def _settle(state: State) -> bool:
 
 
 def _resettable(row: Row) -> bool:
-    return row.kind in ADJUSTABLE
+    return row.kind in ADJUSTABLE or row.kind in TYPED
+
+
+def _clear_secret(state: State) -> bool:
+    """Remove the stored token. An empty value deletes the item rather than storing a blank."""
+    if telegram.set_token(""):
+        state.note = ("ok", t("tui.reset_done"))
+        return True
+    state.note = ("error", t("tui.error.no_store", backend=telegram.backend_label()))
+    return False
 
 
 def _reset_row(state: State, row: Row) -> bool:
+    if row.kind == "secret":  # not a Settings field: it lives in the credential store
+        return _clear_secret(state)
     return _commit(state, _with(state.settings, row, getattr(DEFAULTS, row.field)), "tui.reset_done")
 
 
 def _reset_all(state: State) -> bool:
     """Every setting back to default; vacation days are data, not a setting, and stay."""
-    return _commit(state, replace(DEFAULTS, vacation=state.settings.vacation), "tui.reset_done")
+    base = replace(DEFAULTS, vacation=state.settings.vacation)
+    return _clear_secret(state) & _commit(state, base, "tui.reset_done")
 
 
 def _row_question(state: State, row: Row) -> str:
+    if row.kind == "secret":  # no default to preview: the value is not in the settings at all
+        return t("tui.prompt.confirm_row", label=t(f"tui.row.{row.key}"),
+                 value=t("tui.value.unset"))
     preview = _value(state, row, _with(state.settings, row, getattr(DEFAULTS, row.field)))
     return t("tui.prompt.confirm_row", label=t(f"tui.row.{row.key}"), value=preview)
+
+
+def _apply_typed(state: State, row: Row, editing: str) -> None:
+    """Validate and store a typed row. The token goes to the credential store, never to JSON."""
+    value = editing.strip()
+    if row.kind == "secret":
+        if not value:
+            state.note = ("info", t("tui.unchanged"))  # blank keeps the stored token
+            return
+        if not telegram.TOKEN_RE.match(value):
+            state.note = ("error", t("tui.error.token_format"))
+            return
+        if not telegram.set_token(value):
+            state.note = ("error", t("tui.error.no_store", backend=telegram.backend_label()))
+            return
+        state.note = ("ok", t("tui.saved"))
+        return
+    if not value:
+        state.note = ("info", t("tui.unchanged"))
+        return
+    if not telegram.CHAT_RE.match(value):
+        state.note = ("error", t("tui.error.chat_format"))
+        return
+    _commit(state, _with(state.settings, row, value))
+
+
+def _typed_tui(state: State, row: Row, stdin: IO[str], screen: _Screen,
+               render: Callable[[], list[str]]) -> None:
+    """Type a value on the note line; a secret echoes ``*`` and is never drawn in full."""
+    secret = row.kind == "secret"
+    editing = ""
+    hint = t("tui.prompt.secret_keep") if secret else t("tui.prompt.text_edit")
+    while True:
+        shown = "*" * len(editing) if secret else editing
+        state.note = ("input", f"{hint} {shown}{CARET}")
+        screen.draw(render())
+        if _wait(stdin):
+            continue  # resized: redraw at the top of the loop
+        key = keyreader.read_edit_key(stdin)
+        if key == "escape":
+            state.note = ("", "")
+            return
+        if key == "enter":
+            _apply_typed(state, row, editing)
+            return
+        if key == "backspace":
+            editing = editing[:-1]
+        elif key and len(editing) < TEXT_MAX:
+            editing += key
 
 
 def _vacation_add(state: State, text: str) -> bool:
@@ -454,6 +533,8 @@ def _tui(state: State, stdin: IO[str], out: IO[str]) -> int:
                     if row.kind == "vacation":
                         _vacation_tui(state, stdin, screen)
                         _settle(state)
+                    elif row.kind in TYPED:
+                        _typed_tui(state, row, stdin, screen, render)
                     else:
                         state.note = ("info", t("tui.readonly"))
                 elif key == "reset":
@@ -497,6 +578,18 @@ def _numbered_row(state: State, row: Row, stdin: IO[str], out: IO[str]) -> None:
         _vacation_numbered(state, stdin, out)
     elif row.kind in ("toggle", "language"):
         _commit(state, _step(state.settings, row, 1))
+    elif row.kind == "text":
+        answer = _ask(t("tui.prompt.text_ask", label=t(f"tui.row.{row.key}"),
+                        current=_value(state, row)), stdin, out)
+        _apply_typed(state, row, answer or "")
+    elif row.kind == "secret":
+        # No echo: read_hidden refuses rather than falling back to a visible prompt, so a
+        # piped fallback cannot put a token on the scrollback.
+        answer = telegram.read_token(t("tui.prompt.secret_enter"))
+        if answer is None:
+            state.note = ("error", t("tui.error.no_echo"))
+        else:
+            _apply_typed(state, row, answer)
     else:
         low, high = _bounds(row, state.settings)
         answer = _ask(t("tui.prompt.value", label=t(f"tui.row.{row.key}"),

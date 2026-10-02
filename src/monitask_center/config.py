@@ -1,4 +1,9 @@
-"""User settings: one JSON file owned by the tool (~/.monitask-center/config.json)."""
+"""User settings: one JSON file owned by the tool (~/.monitask-center/config.json).
+
+No secret is ever written here. The Telegram bot token is filed in the OS credential
+store instead -- see :mod:`monitask_center.telegram` -- and this module holds only the
+non-secret chat id that goes with it.
+"""
 
 from __future__ import annotations
 
@@ -42,6 +47,9 @@ class Settings:
     lunch_start_hour: int = 12
     lunch_end_hour: int = 13         # exclusive: a check at this hour is a normal one
     telegram: bool = True            # False = macOS notifications only
+    telegram_chat_id: str = ""       # an identifier, not a secret: stored here in plain JSON.
+                                     # The bot token is NOT a field -- it lives in the OS
+                                     # credential store, see monitask_center.telegram
     vacation: tuple[str, ...] = ()   # ISO dates with no checks and no reminders
 
     def check_hours(self) -> list[int]:

@@ -64,5 +64,19 @@
   "tui.help.vacation_day": "按 ⏎ 或 d 刪除這一天",
   "tui.error.vacation_date": "日期格式錯誤,請用 2026-10-05 或 2026-10-05~2026-10-09",
   "tui.error.vacation_range": "區間過長,最多 366 天",
-  "tui.error.vacation_command": "請輸入「a 日期」或「d 日期」,直接 ⏎ 返回"
+  "tui.error.vacation_command": "請輸入「a 日期」或「d 日期」,直接 ⏎ 返回",
+  "tui.row.telegram_token": "Telegram Bot Token",
+  "tui.row.telegram_chat": "Telegram Chat ID",
+  "tui.help.telegram_token": "存於 macOS 鑰匙圈,不寫入設定檔;留空保留現有值",
+  "tui.help.telegram_chat": "接收通知的 chat id(純數字,群組為負數)",
+  "tui.value.unset": "未設定",
+  "tui.value.from_env": "環境變數",
+  "tui.prompt.text_edit": "輸入新值",
+  "tui.prompt.text_ask": "{label}(目前 {current})輸入新值:",
+  "tui.prompt.secret_keep": "輸入新 token(留空保留現有)",
+  "tui.prompt.secret_enter": "輸入 Telegram bot token(不會顯示):",
+  "tui.error.token_format": "token 格式錯誤,應為 <數字>:<字串>",
+  "tui.error.chat_format": "chat id 格式錯誤,應為純數字(可為負數)",
+  "tui.error.no_store": "無法寫入認證存放區({backend}),祕密不會存進設定檔",
+  "tui.error.no_echo": "此終端機無法關閉回顯,已取消輸入"
 }

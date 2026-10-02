@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from monitask_center import config, notify
+from monitask_center import config, notify, telegram
 
 NASTY = ["it's", 'say "hi"', "back\\slash", "line1\nline2", "\u4e2d\u6587 'mixed' \"q\" \\", "-e rm -rf", "\" & (do shell script \"x\")"]
 
@@ -77,39 +77,51 @@ def macos(monkeypatch):
 
 
 def test_telegram_off_uses_macos(monkeypatch, macos):
-    monkeypatch.setattr(notify, "telegram", lambda m: pytest.fail("telegram must not be called"))
+    monkeypatch.setattr(notify, "telegram_message",
+                        lambda m, *a: pytest.fail("telegram must not be called"))
     notify.notify("m", use_telegram=False)
     assert macos == ["m"]
 
 
-def test_missing_tg_send_falls_back(monkeypatch, tmp_path, macos):
-    monkeypatch.setattr(notify, "TG_SEND", tmp_path / "absent.sh")
+def test_missing_credentials_fall_back_to_macos(monkeypatch, macos):
+    # send_message returns False when neither the credential store nor the env has a token
+    monkeypatch.setattr(telegram, "send", lambda text, chat_id="": False)
     notify.notify("m")
     assert macos == ["m"]
 
 
-def test_send_failure_falls_back_and_success_does_not(monkeypatch, tmp_path, macos):
-    script = tmp_path / "tg-send.sh"
-    script.write_text("#!/bin/bash\n")
-    monkeypatch.setattr(notify, "TG_SEND", script)
-    monkeypatch.setattr(config, "PROJECT_ROOT", tmp_path)
-    rc = {"send": 1}
-    monkeypatch.setattr(notify, "run", lambda cmd, **k: subprocess.CompletedProcess(
-        cmd, rc["send"] if "send" in cmd else 0))
-    notify.notify("m")
-    assert macos == ["m"]
-    rc["send"] = 0
-    notify.notify("m2")
+def test_send_failure_falls_back_and_success_does_not(monkeypatch, macos):
+    sent = []
+    ok = {"value": False}
+
+    def fake_send(text, chat_id=""):
+        sent.append((text, chat_id))
+        return ok["value"]
+
+    monkeypatch.setattr(telegram, "send", fake_send)
+    notify.notify("m", chat_id="-100123")
+    assert macos == ["m"] and sent[0][1] == "-100123"  # the chat id reaches the sender
+    ok["value"] = True
+    notify.notify("m2", chat_id="-100123")
     assert macos == ["m"]  # delivered via telegram, no fallback
+
+
+def test_send_never_raises_into_notify(monkeypatch, macos):
+    def boom(text, chat_id=""):
+        raise RuntimeError("kaput")
+
+    monkeypatch.setattr(telegram, "send", boom)
+    notify.notify("m")
+    assert macos == ["m"]  # a broken sender degrades to the macOS notification
 
 
 def test_telegram_exception_is_logged_and_falls_back(monkeypatch, macos):
     logged = _capture(monkeypatch)
 
-    def boom(m):
+    def boom(m, *a):
         raise RuntimeError("kaput")
 
-    monkeypatch.setattr(notify, "telegram", boom)
+    monkeypatch.setattr(notify, "telegram_message", boom)
     notify.notify("m")
     assert macos == ["m"] and "kaput" in logged[0] and "notify." not in logged[0]
 

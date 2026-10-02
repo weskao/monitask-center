@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from monitask_center import config, install, launchd
+from monitask_center import config, install, launchd, telegram
 from monitask_center.config import Settings
 from monitask_center.i18n import t
 
@@ -101,10 +101,13 @@ def system(tmp_path, monkeypatch):
     return fake
 
 
-def run(**kw):
+def run(settings=None, **kw):
     kw.setdefault("input_fn", lambda prompt="": "")
     kw.setdefault("confirm", lambda q: False)
-    return install.run_install(Settings(), **kw)
+    # A safety net: without this a test that confirms the Telegram step would block on the
+    # real terminal waiting for a secret.
+    kw.setdefault("getpass_fn", lambda prompt="": "")
+    return install.run_install(settings or Settings(), **kw)
 
 
 def test_fresh_install_bootstraps_one_job_and_keeps_env(system, tmp_path, capsys):
@@ -144,31 +147,65 @@ def test_broken_or_outdated_runner_is_rebuilt(system, broken):
     assert system.count("pip") == 1  # deps probe passes again once the runner works
 
 
-def test_telegram_saved_hidden_preserved_and_private(system, tmp_path, capsys, monkeypatch):
-    helper = Path.home() / ".claude/scripts/tg-send.sh"
-    helper.parent.mkdir(parents=True)
-    helper.write_text("")
+def test_telegram_token_goes_to_the_credential_store_and_the_chat_id_to_config(
+        system, tmp_path, capsys, monkeypatch, no_real_keychain):
     env = tmp_path / ".env"
-    env.write_text("OTHER_SETTING=preserved\nTG_CHAT_ID=bad")  # no trailing newline, stale bad chat id
+    env.write_text("OTHER_SETTING=preserved\n")  # unrelated entries must survive untouched
+    sent = []
+    monkeypatch.setattr(telegram, "send", lambda text, chat_id="": sent.append((text, chat_id)) or True)
     answers = iter(["-123"])
     assert run(getpass_fn=lambda prompt="": TOKEN, input_fn=lambda prompt="": next(answers),
                confirm=lambda q: True) == 0
-    lines = env.read_text().splitlines()
-    assert lines[0] == "OTHER_SETTING=preserved"
-    assert sorted(lines[1:]) == [f"TG_BOT_TOKEN={TOKEN}", "TG_CHAT_ID=-123"]
-    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    assert no_real_keychain[telegram.TOKEN_KEY] == TOKEN  # the store, not the file
+    assert env.read_text() == "OTHER_SETTING=preserved\n"  # no token left in plaintext
+    assert config.load().telegram_chat_id == "-123"  # an identifier, so plain JSON
     captured = capsys.readouterr()
-    assert TOKEN not in captured.out + captured.err
-    assert system.count("tg-send") == 1 and t("install.tg.test_sent") in captured.out
-    assert not list(tmp_path.glob(".env.setup.*"))
-    # An already-valid config is kept byte-identical and never re-prompted.
-    before = env.read_bytes()
-    env.chmod(0o644)
+    assert TOKEN not in captured.out + captured.err  # never echoed
+    assert sent and sent[0][1] == "-123" and t("install.tg.test_sent") in captured.out
+
+
+def test_a_token_already_in_env_is_migrated_into_the_store(system, tmp_path, capsys, no_real_keychain):
+    env = tmp_path / ".env"
+    env.write_text(f"OTHER=keep\nTG_BOT_TOKEN={TOKEN}\n")
+    assert run(confirm=lambda q: False) == 0  # declining the prompt still migrates
+    assert no_real_keychain[telegram.TOKEN_KEY] == TOKEN
+    assert env.read_text() == "OTHER=keep\n"  # the token is gone, the rest is intact
+    assert t("install.tg.migrated") in capsys.readouterr().out
+
+
+def test_without_a_credential_store_the_token_falls_back_to_env(
+        system, tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(telegram, "available", lambda: False)
+    monkeypatch.setattr(telegram, "backend_label", lambda: "none")
+    monkeypatch.setattr(telegram, "set_token", lambda v: False)
+    monkeypatch.setattr(telegram, "token", lambda: "")
+    env = tmp_path / ".env"
+    answers = iter(["-123"])
+    assert run(getpass_fn=lambda prompt="": TOKEN, input_fn=lambda prompt="": next(answers),
+               confirm=lambda q: True) == 0
+    # Only the secret needs the file fallback; the chat id is not a secret and goes to JSON.
+    assert env.read_text() == f"{telegram.ENV_KEYS[0]}={TOKEN}\n"
+    assert config.load().telegram_chat_id == "-123"
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    assert t("install.tg.saved_env", backend="none") in capsys.readouterr().out
+
+
+def test_a_valid_pair_is_kept_and_never_re_prompted(
+        system, tmp_path, capsys, monkeypatch, no_real_keychain):
+    no_real_keychain[telegram.TOKEN_KEY] = TOKEN
+    config.save(Settings(telegram_chat_id="-123"))  # both halves already present
+    env = tmp_path / ".env"
+    env.write_bytes(b"OTHER=keep\n")
     boom = lambda *a, **k: pytest.fail("prompted")  # noqa: E731
-    assert run(getpass_fn=boom, input_fn=boom, confirm=boom) == 0
-    assert env.read_bytes() == before and stat.S_IMODE(env.stat().st_mode) == 0o600
-    assert system.count("tg-send") == 2  # a kept config is test-sent too
-    assert TOKEN not in "".join(capsys.readouterr())
+    assert run(config.load(), getpass_fn=boom, input_fn=boom, confirm=boom) == 0
+    assert env.read_text() == "OTHER=keep\n"  # nothing to migrate, nothing rewritten
+    assert t("install.tg.test_sent") in capsys.readouterr().out
+
+
+def test_a_malformed_token_is_rejected_not_stored(system, no_real_keychain):
+    assert run(getpass_fn=lambda prompt="": "not-a-token", input_fn=lambda prompt="": "-1",
+               confirm=lambda q: True) == 1
+    assert telegram.TOKEN_KEY not in no_real_keychain  # refused, never half-saved
 
 
 def test_invalid_token_fails_before_launchd(system, tmp_path, capsys):
@@ -198,7 +235,8 @@ def test_accessibility_pane_opened_on_request_and_granted_on_recheck(system):
         asked.append(prompt)
         return ""
 
-    assert run(confirm=lambda q: True, input_fn=enter) == 0
+    # Decline Telegram, confirm only the accessibility pane: both steps share `confirm`.
+    assert run(confirm=lambda q: q == t("install.ax.open_ask"), input_fn=enter) == 0
     assert system.count("open") == 1 and system.count("loaded") == 1
 
 
