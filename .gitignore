@@ -288,3 +288,4 @@ pyrightconfig.json
 cython_debug/
 
 .codegraph/
+.claude/agent-memory-local/

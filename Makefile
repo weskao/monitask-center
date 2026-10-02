@@ -1,52 +1,37 @@
 SHELL := /bin/bash
 
 PROJECT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-SETUP := $(PROJECT_DIR)/setup.sh
-INSTALL := $(PROJECT_DIR)/install.sh
-RUN := $(PROJECT_DIR)/run.sh
-LOG_FILE := $(HOME)/Library/Application Support/MonitaskCenter/monitask.log
 
-.PHONY: help setup install reload uninstall status plan logs dump-windows check
+.PHONY: help install config uninstall status plan logs test
 
 help:
 	@printf '%s\n' \
-		'Monitask Center commands:' \
-		'  make setup         Interactive first-time setup' \
-		'  make install       Complete first-time setup and load launchd jobs' \
-		'  make reload        Reload launchd jobs after changes' \
-		'  make uninstall     Stop and remove launchd jobs' \
-		'  make status        Show automation and Accessibility status' \
-		'  make plan          Show today/yesterday schedule actions' \
-		'  make logs          Follow the Monitask log' \
-		'  make dump-windows  Inspect Monitask windows and buttons' \
-		'  make check         Validate scripts and run installer regression checks'
+		'Monitask Center commands (thin wrappers around the monitask-center CLI):' \
+		'  make install    Install the CLI (uv tool, editable); then run: monitask-center install' \
+		'  make config     Open the interactive settings menu' \
+		'  make uninstall  Remove the launchd job' \
+		'  make status     Show workday, schedule and Monitask status' \
+		'  make plan       Show today'"'"'s check plan' \
+		'  make logs       Follow the Monitask log' \
+		'  make test       Run the test suite'
 
-setup:
-	@/bin/bash "$(SETUP)"
+install:
+	@cd "$(PROJECT_DIR)" && uv tool install --editable . --force
 
-install: setup
-
-reload:
-	@/bin/bash "$(INSTALL)" reload
+config:
+	@monitask-center --config
 
 uninstall:
-	@/bin/bash "$(INSTALL)" uninstall
+	@monitask-center uninstall
 
 status:
-	@/bin/bash "$(RUN)" status
-	@/bin/bash "$(INSTALL)" status
+	@monitask-center status
 
 plan:
-	@/bin/bash "$(RUN)" plan
+	@monitask-center plan
 
 logs:
-	@tail -f "$(LOG_FILE)"
+	@monitask-center logs
 
-dump-windows:
-	@/bin/bash "$(RUN)" dump-windows
-
-check:
-	@for script in "$(SETUP)" "$(INSTALL)" "$(RUN)" "$(PROJECT_DIR)/check-install.sh"; do bash -n "$$script" || exit; done
-	@bash "$(PROJECT_DIR)/check-install.sh"
-	@git -C "$(PROJECT_DIR)" diff --check
-	@echo "Checks passed."
+test:
+	@cd "$(PROJECT_DIR)" && uv run --group dev pytest -q

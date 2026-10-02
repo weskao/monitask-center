@@ -1,0 +1,23 @@
+{
+  "common.on": "開",
+  "common.off": "關",
+  "common.yes": "是",
+  "common.no": "否",
+  "workday.fail_open_notice": "無法確認今天是否為工作日,先視為工作日:{detail}",
+  "workday.cache_broken": "假日快取檔損毀,視為工作日:{path}({error})",
+  "workday.download_failed": "無法下載 {year} 年政府行事曆,視為工作日:{error}",
+  "workday.downloaded": "已下載 {year} 年政府行事曆,共 {count} 筆,存於 {path}",
+  "workday.unexpected_error": "工作日判斷發生未預期錯誤,視為工作日:{error}",
+  "workday.err.too_large": "行事曆資料過大",
+  "workday.err.bad_format": "行事曆格式不符預期",
+  "workday.err.empty": "行事曆內容為空",
+  "notify.telegram_error": "Telegram 傳送發生錯誤:{error}",
+  "notify.macos_failed": "macOS 通知失敗(結束碼 {code}):{detail}",
+  "notify.macos_error": "macOS 通知無法執行:{error}",
+  "launchd.sync.not_installed": "尚未安裝排程,設定已儲存,請先執行安裝",
+  "launchd.sync.unchanged": "排程無需變更",
+  "launchd.err.code": "launchctl 結束碼 {code}",
+  "launchd.err.detail": "launchctl 結束碼 {code}:{detail}",
+  "config.corrupt_saved": "已將損毀的設定檔備份至 {path}",
+  "launchd.sync.reinstalled": "已重新載入排程:{jobs}"
+}
