@@ -19,7 +19,7 @@ def test_every_tier_row_has_the_declared_width(rows, wide, high):
 def test_colour_off_returns_the_rows_unchanged_and_without_escapes():
     for columns, rows in ((100, logo.BIG), (50, logo.SMALL)):
         out = logo.lines(columns, False)
-        assert out == ["  " + row for row in rows]
+        assert out == [" " * logo.indent(columns, rows) + row for row in rows]
         assert not any("\x1b" in line for line in out)
 
 
@@ -45,7 +45,7 @@ def test_gradient_runs_from_amber_to_teal():
         assert {logo.STOPS[0], logo.STOPS[-1]} <= set(used)
         assert all(line.endswith("\x1b[0m") for line in painted)
     small = logo.lines(50, True)[0]
-    assert small.startswith("  \x1b[38;5;214m┏")  # first glyph: first stop
+    assert small.lstrip(" ").startswith("\x1b[38;5;214m┏")  # first glyph: first stop
     assert SGR.findall(small)[-1] == str(logo.STOPS[-1])  # last glyph: last stop
 
 
@@ -70,3 +70,17 @@ def test_tagline_key_exists_is_short_and_is_what_the_menu_draws(monkeypatch):
 
     state = menu.State(menu.config.load(), lambda: ["a", "b", "c"])
     assert any(text in line for line in menu._main_lines(state, 0, Tty()))
+
+
+@pytest.mark.parametrize("columns", [46, 69, 70, 80, 120, 200])
+def test_logo_is_centred_over_the_panel_and_never_wraps(columns):
+    rows = logo.tier(columns)
+    panel = columns - 1
+    for color in (False, True):
+        for line, row in zip(logo.lines(columns, color), rows):
+            left = present.width(line) - len(row)
+            assert left >= logo.INDENT and present.width(line) <= panel
+            assert left == logo.indent(columns, rows)
+    left = logo.indent(columns, rows)
+    if left > logo.INDENT:  # not pinned to the floor: margins differ by at most one column
+        assert abs((panel - len(rows[0]) - left) - left) <= 1

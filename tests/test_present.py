@@ -251,3 +251,13 @@ def test_status_lines_are_grey_italic_so_they_read_as_read_only():
     for text in ("s0", "s1", "s2"):
         assert any(f"\x1b[3;{present.GREY}m{text}" in line for line in out)
     assert not any(f"\x1b[3;{present.GREY}mvalue" in line for line in out)
+
+
+def test_tagline_is_centred_like_the_logo():
+    from monitask_center.tui import logo
+
+    out = _with_logo(30)
+    tag = next(line for line in out if "tagline" in line)
+    lead = len(tag) - len(tag.lstrip(" "))
+    assert abs((99 - present.width(tag)) - lead) <= 1  # panel is 99 wide at 100 columns
+    assert lead == (99 - len("tagline")) // 2 and logo.indent(100, logo.BIG) == (99 - 67) // 2

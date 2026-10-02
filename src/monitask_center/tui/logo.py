@@ -1,8 +1,9 @@
 """The --config header logo: the wordmark ``monitask-center`` in two size tiers.
 
 Rows are embedded literals (no runtime FIGlet). :func:`lines` picks the widest tier
-that fits the terminal (67 columns wide, else 43, else none) and paints it with a
-horizontal amber -> teal gradient over every glyph. With colour off the rows come
+that fits the terminal (67 columns wide, else 43, else none), centres it over the
+panel (``columns - 1`` wide, never less than :data:`INDENT` from the edge) and paints
+it with a horizontal amber -> teal gradient over every glyph. With colour off the rows come
 back as plain glyphs, no escape bytes.
 
 Known limitation: the box-drawing glyphs of the small tier are East-Asian *ambiguous*
@@ -57,12 +58,20 @@ def _stop(i: int, span: int) -> str:
     return f"\x1b[38;5;{STOPS[round(i / span * (len(STOPS) - 1))]}m"
 
 
-def paint(rows: tuple[str, ...]) -> list[str]:
-    """*rows* indented, every glyph painted with the gradient by column."""
+def indent(columns: int, rows: tuple[str, ...]) -> int:
+    """Left margin that centres *rows* over the ``columns - 1`` wide panel.
+
+    :func:`tier` guarantees ``INDENT + width <= columns - 1``, so the floor never overflows.
+    """
+    return max(INDENT, (columns - 1 - len(rows[0])) // 2)
+
+
+def paint(rows: tuple[str, ...], margin: int = INDENT) -> list[str]:
+    """*rows* indented by *margin*, every glyph painted with the gradient by column."""
     span = max(len(rows[0]) - 1, 1)
     out = []
     for row in rows:
-        cells, last = [" " * INDENT], ""
+        cells, last = [" " * margin], ""
         for i, ch in enumerate(row):
             code = "" if ch == " " else _stop(i, span)
             if code and code != last:
@@ -78,4 +87,5 @@ def lines(columns: int, color: bool, height: int | None = None) -> list[str]:
     rows = tier(columns, height)
     if not rows:
         return []
-    return paint(rows) if color else [" " * INDENT + row for row in rows]
+    margin = indent(columns, rows)
+    return paint(rows, margin) if color else [" " * margin + row for row in rows]

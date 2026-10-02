@@ -186,7 +186,8 @@ def compose(
     atoms.append(("sep", [note(THIN * (w - 2), AMBER)]))
     atoms += [("status", [note(x, *INFO)]) for x in extra[1:2]]
     if logo and tagline:
-        atoms.append(("tagline", [note(tagline, DIM)]))
+        text = fit(tagline, w - 2)  # centred under the logo, which is centred over the panel
+        atoms.append(("tagline", [" " * max((w - width(text)) // 2, 2) + style.paint(text, DIM)]))
     atoms += [("status", [note(x, *INFO)]) for x in extra[2:]]
     count, start, room = len(items), 0, None
     if lines is not None:

@@ -14,6 +14,11 @@ from monitask_center.tui import config_menu, keyreader, logo, menu, present
 
 WORDMARK = frozenset(logo.BIG + logo.SMALL)
 
+
+def _is_wordmark(line: str) -> bool:
+    """A logo row behind its centring margin (blank lead, then exactly one tier row)."""
+    return any(line.endswith(row) and not line[:-len(row)].strip() for row in WORDMARK)
+
 SGR = re.compile(r"\x1b\[[0-9;]*m")
 REDRAW = re.compile(r"\x1b\[\d+A\r\x1b\[J")
 CURSOR = re.compile(r"\x1b\[\?25[lh]")
@@ -410,13 +415,13 @@ def test_logo_panel_never_overflows_in_any_size(monkeypatch, columns, lines, col
     for panel in _panel(monkeypatch, columns, lines, color):
         assert len(panel) < lines
         assert all(present.width(line) <= columns - 1 for line in panel)
-        wordmark = [line for line in panel if present.strip_ansi(line)[2:] in WORDMARK]
+        wordmark = [line for line in panel if _is_wordmark(present.strip_ansi(line))]
         assert len(wordmark) in (0, len(logo.SMALL), len(logo.BIG))  # atomic: never a partial wordmark
 
 
 def test_the_logo_shows_at_80x24_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):
     plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 24, False)[0]]
-    assert "  " + logo.SMALL[0] in plain  # 24 rows: the 3-row tier keeps both status lines
+    assert " " * logo.indent(80, logo.SMALL) + logo.SMALL[0] in plain  # 24 rows: the 3-row tier keeps both status lines
     assert t("tui.tagline") not in "\n".join(plain)
     assert any("monitask: timing" in line for line in plain)
     assert any("last check 10:00" in line for line in plain)
@@ -460,7 +465,7 @@ def test_monitask_status_line_outranks_the_logo_on_short_terminals(monkeypatch, 
     for panel in _panel(monkeypatch, columns, lines, False):
         plain = [present.strip_ansi(line) for line in panel]
         assert any("monitask: timing" in line for line in plain)
-        assert any(line[2:] in WORDMARK for line in plain) == logo_shown
+        assert any(_is_wordmark(line) for line in plain) == logo_shown
         assert len(panel) < lines
 
 
