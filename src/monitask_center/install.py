@@ -151,7 +151,8 @@ def configure_telegram(p: Paths, settings: config.Settings, *, getpass_fn, input
     token_ok, chat_ok = bool(TOKEN_RE.match(token)), bool(CHAT_RE.match(chat))
     if token_ok and chat_ok:
         os.chmod(p.env, 0o600)
-        return print(t("install.tg.valid"))
+        print(t("install.tg.valid"))
+        return _send_test(p, helper)
     if not confirm(t("install.tg.ask")):
         return print(t("install.tg.declined"))
     if token_ok:
@@ -185,6 +186,17 @@ def configure_telegram(p: Paths, settings: config.Settings, *, getpass_fn, input
     finally:
         os.umask(old_mask)
     print(t("install.tg.saved"))
+    _send_test(p, helper)
+
+
+def _send_test(p: Paths, helper: Path) -> None:
+    """Fire one test message; delivery is not checked, the user confirms it on Telegram."""
+    try:
+        _run(["/bin/bash", str(helper), "send", t("install.tg.test_message")], cwd=p.root,
+             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=45)
+    except subprocess.TimeoutExpired:
+        pass
+    print(t("install.tg.test_sent"))
 
 
 def _trusted() -> bool:
@@ -229,9 +241,12 @@ def run_install(settings: config.Settings, *, input_fn=input, getpass_fn=getpass
         except (subprocess.CalledProcessError, OSError) as exc:
             raise InstallError(t("install.err.launchd", error=launchd.describe_error(exc))) from exc
         _say("install.step.verify")
-        print(t("install.verify.installed",
-                state=t("install.verify.yes" if launchd.is_installed() else "install.verify.no")))
-        print(t("install.verify.loaded", count=len(launchd.loaded())))
+        installed, count, total = launchd.is_installed(), len(launchd.loaded()), len(launchd.JOBS)
+        print(t("install.verify.installed", mark="✅" if installed else "❌",
+                state=t("install.verify.yes" if installed else "install.verify.no")))
+        print(t("install.verify.loaded", mark="✅" if count == total else "❌", count=count, total=total))
+        if not installed or count != total:
+            raise InstallError(t("install.err.verify"))
     except InstallError as exc:
         print(t("install.error", message=exc), file=sys.stderr)
         return 1

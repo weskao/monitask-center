@@ -37,11 +37,11 @@ uv tool install --editable .     # 安裝 monitask-center 指令
 monitask-center install          # 一次完成其餘設定
 ```
 
-`monitask-center install` 會依序：確認檔案 → 準備執行環境 → (選用)設定 Telegram → 檢查 Accessibility → 載入 launchd job → 顯示結果。
+`monitask-center install` 會依序：確認檔案 → 準備執行環境 → (選用)設定 Telegram → 檢查 Accessibility → 載入 launchd job → 最終驗證。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
 
 - **執行環境全自動**：缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；`MonitaskCenter.app` 內的 python runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **Accessibility 必須手動授予給 `MonitaskCenter.app`**：到「系統設定 → 隱私權與安全性 → 輔助使用」加入並開啟它(安裝程式可替你開啟該設定頁)。未授權時安裝會停止，授權後重跑 `monitask-center install`。
-- **Telegram 是選用功能**：只有本機存在 `~/.claude/scripts/tg-send.sh` 且設定中 telegram 為開時才引導設定，token 與 chat id 存於專案目錄 `.env`(權限 600，已被 `.gitignore` 排除，範例見 `.env.example`)。否則使用 macOS 通知。
+- **Telegram 是選用功能**：只有本機存在 `~/.claude/scripts/tg-send.sh` 且設定中 telegram 為開時才引導設定，token 與 chat id 存於專案目錄 `.env`(權限 600，已被 `.gitignore` 排除，範例見 `.env.example`)。Telegram 設定完成(新存入或沿用既有設定)後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。否則使用 macOS 通知。
 
 ## 設定:`monitask-center --config`
 

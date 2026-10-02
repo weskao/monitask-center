@@ -60,6 +60,8 @@ class FakeSystem:
             out = "".join(f"-\t0\t{launchd.label(j)}\n" for j in launchd.JOBS if launchd.plist_path(j).exists())
         elif name == "launchctl":
             pass  # bootout
+        elif name == "bash" and args[0].endswith("tg-send.sh"):
+            self.calls.append(f"tg-{args[1]}")
         elif name == "bash":  # run.sh status -> the runner must work
             r = self._version(self.runner)
             if r.returncode:
@@ -113,7 +115,16 @@ def test_fresh_install_bootstraps_one_job_and_keeps_env(system, tmp_path, capsys
     assert (system.count("brew"), system.count("pip"), system.count("codesign")) == (1, 1, 1)
     assert system.runner.read_text() == PYTHON_VERSION
     assert env.read_bytes() == b"OTHER_SETTING=preserved\n"  # no tg-send.sh -> untouched
-    assert t("install.done") in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert t("install.done") in out and "✅ 已載入的排程:1/1" in out and "❌" not in out
+
+
+def test_verify_failure_is_an_error_not_done(system, monkeypatch, capsys):
+    monkeypatch.setattr(launchd, "loaded", lambda: [])
+    assert run() == 1
+    captured = capsys.readouterr()
+    assert "❌ 已載入的排程:0/1" in captured.out and t("install.done") not in captured.out
+    assert t("install.err.verify") in captured.err
 
 
 def test_repeat_install_only_reloads_launchd(system):
@@ -148,6 +159,7 @@ def test_telegram_saved_hidden_preserved_and_private(system, tmp_path, capsys, m
     assert stat.S_IMODE(env.stat().st_mode) == 0o600
     captured = capsys.readouterr()
     assert TOKEN not in captured.out + captured.err
+    assert system.count("tg-send") == 1 and t("install.tg.test_sent") in captured.out
     assert not list(tmp_path.glob(".env.setup.*"))
     # An already-valid config is kept byte-identical and never re-prompted.
     before = env.read_bytes()
@@ -155,6 +167,7 @@ def test_telegram_saved_hidden_preserved_and_private(system, tmp_path, capsys, m
     boom = lambda *a, **k: pytest.fail("prompted")  # noqa: E731
     assert run(getpass_fn=boom, input_fn=boom, confirm=boom) == 0
     assert env.read_bytes() == before and stat.S_IMODE(env.stat().st_mode) == 0o600
+    assert system.count("tg-send") == 2  # a kept config is test-sent too
     assert TOKEN not in "".join(capsys.readouterr())
 
 
