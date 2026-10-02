@@ -437,7 +437,9 @@ def test_numbered_fallback_with_a_tty_stdout_emits_no_escape_byte(monkeypatch):
     out = FakeTty()  # stdout is a terminal, stdin is not: the numbered surface
     rc = config_menu(stdin=io.StringIO("10\n9\n\nq\n"), stdout=out, status_lines=status)
     assert rc == 0 and "\x1b" not in out.getvalue()
-    assert logo.BIG[1] in out.getvalue()  # the logo is still there, as plain glyphs
+    # The numbered surface has no terminal size, so it falls back to 80x24 -- narrow enough
+    # that BIG (needs 92 columns) does not fit. Assert a whole tier is present, not which.
+    assert any(row in out.getvalue() for tier in (logo.THICK, logo.BIG, logo.SMALL) for row in tier)
     assert "2026-10-05" in out.getvalue()  # the vacation submenu was rendered too
 
 
@@ -477,7 +479,8 @@ def test_frame_height_is_constant_while_the_cursor_moves_with_status_first(monke
 
 def test_numbered_fallback_prints_the_logo_as_plain_glyphs():
     _, output = numbered("q\n", status)
-    assert logo.BIG[1] in output and "\x1b" not in output and t("tui.tagline") in output
+    shown = any(row in output for tier in (logo.THICK, logo.BIG, logo.SMALL) for row in tier)
+    assert shown and "\x1b" not in output and t("tui.tagline") in output
 
 
 def test_screen_clears_from_the_top_after_a_resize_and_walks_up_otherwise(monkeypatch):

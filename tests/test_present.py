@@ -260,4 +260,4 @@ def test_tagline_is_centred_like_the_logo():
     tag = next(line for line in out if "tagline" in line)
     lead = len(tag) - len(tag.lstrip(" "))
     assert abs((99 - present.width(tag)) - lead) <= 1  # panel is 99 wide at 100 columns
-    assert lead == (99 - len("tagline")) // 2 and logo.indent(100, logo.BIG) == (99 - 67) // 2
+    assert lead == (99 - len("tagline")) // 2 and logo.indent(100, logo.BIG) == (99 - 89) // 2

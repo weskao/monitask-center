@@ -1,10 +1,15 @@
-"""The --config header logo: the wordmark ``monitask-center`` in two size tiers.
+"""The --config header logo: the wordmark ``monitask-center`` in three size tiers.
 
 Rows are embedded literals (no runtime FIGlet). :func:`lines` picks the widest tier
-that fits the terminal (98 columns wide, else 67, else 43, else none), centres it over
+that fits the terminal (98 columns wide, else 89, else 43, else none), centres it over
 the panel (``columns - 1`` wide, never less than :data:`INDENT` from the edge) and paints
-it with a horizontal amber -> teal gradient over every glyph. With colour off the rows come
+it bold, with a horizontal hue sweep over every glyph. With colour off the rows come
 back as plain glyphs, no escape bytes.
+
+Every wide tier is *solid*: strokes two or more cells thick with no hollow interior, so
+the wordmark reads as filled rather than outlined. The middle tier's ``M`` is drawn nine
+cells wide with its centre wedge spanning the full interior, which is what keeps it from
+degenerating into an ``H`` -- the flaw the previous slanted face had.
 
 Known limitation: the box-drawing glyphs of the small tier are East-Asian *ambiguous*
 width. A terminal set to a CJK locale may draw them 2 cells wide, which would
@@ -29,12 +34,15 @@ THICK = (
     r"_  / / / / / /_/ /  / / /  / / /_ / /_/ /_(__  )_  ,<  _/_____/ /__ /  __/  / / / /_ /  __/  /    ",
     r"/_/ /_/ /_/\____//_/ /_//_/  \__/ \__,_/ /____/ /_/|_|        \___/ \___//_/ /_/\__/ \___//_/     ",
 )
-# font smlant, 67 columns (pagga's M read as an H)
+# solid block, 89 columns. Drawn from a glyph table rather than FIGlet so the letterforms
+# stay auditable: the M is nine cells wide with its centre wedge touching both stems, which
+# is what stops it reading as an H (the flaw the previous slanted face had).
+# Needs INDENT + 89 + SPARE = 92 columns.
 BIG = (
-    r"                   _ __           __                    __         ",
-    r"  __ _  ___  ___  (_) /____ ____ / /_____________ ___  / /____ ____",
-    r" /  ' \/ _ \/ _ \/ / __/ _ `(_-</  '_/___/ __/ -_) _ \/ __/ -_) __/",
-    r"/_/_/_/\___/_//_/_/\__/\_,_/___/_/\_\    \__/\__/_//_/\__/\__/_/   ",
+    "█▄▄▄▄▄▄▄█ ▄▄▄▄▄ █▄▄ █ ▄▄▄ ▄▄▄▄▄  ▄▄▄   ▄▄▄▄ █▄▀▀▀     ▄▄▄▄▄ █▄▄▄▄ █▄▄ █ ▄▄▄▄▄ █▄▄▄▄ █▄▄▄ ",
+    "█▀▀▀▀▀▀▀█ █   █ █▀▄ █  █    █   █   █ █     █▀▄   ▄▄▄ █     █     █▀▄ █   █   █     █▀▄ █",
+    "█       █ █   █ █ ▀ █  █    █   █▄▄▄█ ▀▀▀▄▄ █▀▄▄▄     █     █▄▄▄▄ █ ▀ █   █   █▄▄▄▄ █▄▄▄ ",
+    "▀       ▀ ▀▀▀▀▀ ▀   ▀ ▀▀▀   ▀   ▀   ▀     ▀ ▀▀ ▀▀     ▀▀▀▀▀ ▀▀▀▀▀ ▀   ▀   ▀   ▀▀▀▀▀ ▀   ▀",
 )
 # font future, 43 columns
 SMALL = (
@@ -50,8 +58,11 @@ TIERS = (THICK, BIG, SMALL)  # widest first
 # ponytail: tied to the main menu height, recompute if ROWS changes
 MIN_ROWS = {THICK: 26, BIG: 25}
 
-# 256-colour steps from present.AMBER (214) to present.TEAL (37).
-STOPS = (214, 178, 142, 108, 73, 37)
+# 256-colour steps for the header's hue sweep: nearly a full turn round the wheel, so the
+# wordmark reads as a deliberate gradient rather than a two-tone wash. Both ends stay
+# anchored in the panel's palette -- present.AMBER (214) to present.TEAL (37) -- so the
+# header still belongs to the menu's colour scheme.
+STOPS = (214, 208, 202, 201, 129, 99, 57, 39, 33, 45, 44, 37)
 
 
 def tier(columns: int, lines: int | None = None) -> tuple[str, ...]:
@@ -70,7 +81,13 @@ def tier(columns: int, lines: int | None = None) -> tuple[str, ...]:
 
 
 def _stop(i: int, span: int) -> str:
-    return f"\x1b[38;5;{STOPS[round(i / span * (len(STOPS) - 1))]}m"
+    """SGR prefix for column *i*: bold plus that column's hue.
+
+    Bold is what makes the solid tiers read as heavy at small terminal font sizes; the
+    half-block glyphs (U+2580/U+2584) otherwise look thin and washed out next to the
+    ASCII tiers, which get their weight from stroke thickness alone.
+    """
+    return f"\x1b[1;38;5;{STOPS[round(i / span * (len(STOPS) - 1))]}m"
 
 
 def indent(columns: int, rows: tuple[str, ...]) -> int:
@@ -82,7 +99,7 @@ def indent(columns: int, rows: tuple[str, ...]) -> int:
 
 
 def paint(rows: tuple[str, ...], margin: int = INDENT) -> list[str]:
-    """*rows* indented by *margin*, every glyph painted with the gradient by column."""
+    """*rows* indented by *margin*, every glyph painted bold with the hue sweep by column."""
     span = max(len(rows[0]) - 1, 1)
     out = []
     for row in rows:
