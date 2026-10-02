@@ -1,0 +1,18 @@
+{
+  "check.start": "開始檢查({hour}:00)",
+  "check.locked": "螢幕鎖定或無 console,略過檢查",
+  "check.decision": "{hour}:00 判斷={action} 狀態={state} 工作日={reason}",
+  "check.reason_unchecked": "未查詢",
+  "check.err.checkboxes": "找到的 checkbox 數量不足:{count}",
+  "check.err.exception": "讀取失敗:{error}",
+  "config.corrupt": "設定檔無法讀取,已改用預設值:{path}({reason})",
+  "check.remind_paused": "Monitask 目前已暫停,請記得開始計時",
+  "check.remind_not_running": "Monitask 尚未執行,請記得開啟並開始計時",
+  "check.warn_unknown": "無法讀取 Monitask 狀態(請確認輔助使用權限):{error}",
+  "check.error": "檢查發生錯誤:{error}",
+  "engine.ax_untrusted": "輔助使用權限未授予給 {path}",
+  "engine.not_running": "Monitask 未執行",
+  "engine.window": "視窗[{index}] 標題={title} 子角色={subrole}",
+  "engine.window_detail": "  checkbox={boxes} 按鈕={buttons}",
+  "engine.usage": "用法:{prog} {{{commands}}}"
+}

@@ -1,0 +1,21 @@
+{
+  "cli.description": "Monitask 工作日檢查器(唯讀,只通知不操作)",
+  "cli.help.config": "開啟互動設定選單",
+  "cli.help.install": "首次安裝:執行環境、Telegram、輔助使用權限與背景排程",
+  "cli.help.uninstall": "移除背景排程",
+  "cli.help.status": "顯示目前狀態",
+  "cli.help.plan": "顯示今天是否檢查、檢查時間與下次檢查(不接觸 Monitask)",
+  "cli.help.check": "立即執行一次唯讀檢查",
+  "cli.help.dump-windows": "列出 Monitask 視窗與按鈕(診斷用)",
+  "cli.help.logs": "追蹤日誌檔",
+  "cli.help.logs_path": "只印出日誌檔路徑",
+  "cli.plan.runs": "實際執行",
+  "cli.plan.none": "無",
+  "cli.logs.missing": "找不到日誌檔:{path}",
+  "cli.err.exec": "無法執行:{error}",
+  "cli.usage_prefix": "用法:",
+  "cli.section.options": "選項",
+  "cli.section.positional": "指令",
+  "cli.help.help": "顯示說明後結束",
+  "cli.error": "{prog}: 錯誤: {message}"
+}
