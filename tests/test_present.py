@@ -178,14 +178,14 @@ def test_tagline_never_drawn_without_the_logo():
 
 
 def test_both_pointer_styles_are_two_columns_and_keep_the_columns_aligned():
-    assert {present.width(p) for p in POINTERS} == {2}
+    assert {present.width(p) for p in POINTERS} == {3}
     ascii_rows, emoji_rows = (_compose(80, None, selected=3, pointer=p) for p in POINTERS)
     assert len(ascii_rows) == len(emoji_rows)
     differing = [(a, e) for a, e in zip(ascii_rows, emoji_rows) if a != e]
     assert len(differing) == 1  # only the cursor row differs
     a, e = differing[0]
-    assert a.startswith("> ") and e.startswith(present.POINT_EMOJI)
-    assert a[2:] == e[1:] and present.width(a) == present.width(e)  # same text, same columns
+    assert a.startswith(">  ") and e.startswith(present.POINT_EMOJI)
+    assert a[3:] == e[2:] and present.width(a) == present.width(e)  # same text, same columns
     for rows in (ascii_rows, emoji_rows):  # the cursor row's value starts where every other row's does
         cols = {present.width(ln[:ln.index(CJK + str(i))]) for i in range(10)
                 for ln in rows if ln.rstrip().endswith(CJK + str(i))}

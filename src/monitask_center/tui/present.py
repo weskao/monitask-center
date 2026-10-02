@@ -18,8 +18,8 @@ from dataclasses import dataclass
 ELLIPSIS = "…"
 RULE = "━"
 THIN = "┄"
-POINT_EMOJI = "\U0001F449"  # pointing hand: East-Asian Wide, 2 columns
-POINT_ASCII = "> "  # padded to the same 2 columns, so labels never shift between styles
+POINT_EMOJI = "\U0001F449 "  # pointing hand (East-Asian Wide, 2 columns) + a space, 3 columns
+POINT_ASCII = ">  "  # padded to the same 3 columns, so labels never shift between styles
 EMOJI_TERM_PROGRAMS = frozenset({"Apple_Terminal", "iTerm.app", "vscode", "WezTerm", "ghostty", "Hyper", "Tabby"})
 EMOJI_TERMS = ("xterm-kitty", "alacritty", "foot")
 NO_EMOJI_TERMS = frozenset({"linux", "dumb", "vt100"})
@@ -158,8 +158,8 @@ def compose(
     does not fit ends the list.
     """
     w = max(columns - 1, 12)
-    label_w = min(max((width(lbl) for lbl, _, _ in items), default=0), max(w // 2 - 2, 4))
-    value_w = max(w - 4 - label_w, 1)
+    label_w = min(max((width(lbl) for lbl, _, _ in items), default=0), max(w // 2 - 3, 4))
+    value_w = max(w - 5 - label_w, 1)
 
     def row(i: int) -> str:
         label, value, tone = items[i]
@@ -168,7 +168,7 @@ def compose(
         if i == selected:
             return (f"{style.paint(style.pointer, AMBER)}{style.paint(cell, BOLD)}  "
                     f"{style.paint(value, BOLD, *TONES[tone])}")
-        return f"  {cell}  {style.paint(value, *TONES[tone])}"
+        return f"   {cell}  {style.paint(value, *TONES[tone])}"
 
     def note(text: str, *codes: str) -> str:
         # Newlines/control bytes (exception text, status probes) would break the row count.
