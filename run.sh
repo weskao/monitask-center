@@ -1,9 +1,10 @@
 #!/bin/bash
-# launchd 進入點：用 MonitaskCenter.app 內的 python 副本跑 monitask.py。
-# 必須經由此 shell 呼叫 python-runner（而非讓 launchd 直接 exec bundle 執行檔，
-# 否則會被 LaunchServices 當 app 啟動而不執行腳本）；AX 身分仍歸屬 bundle，授權生效。
+# launchd entry point: run monitask.py with the python copy inside MonitaskCenter.app.
+# It must go through this shell wrapper (not launchd exec'ing the bundle binary directly):
+# otherwise LaunchServices starts it as an app and the script never runs; the AX identity
+# still belongs to the bundle, so the Accessibility grant applies.
 HERE="$(cd "$(dirname "$0")" && pwd)"
-export PYTHONPATH="$HERE/pylibs"
-# 載入 Telegram 設定（TG_BOT_TOKEN / TG_CHAT_ID）供 tg-send 使用；不存在則 notify 退回 macOS 通知
+export PYTHONPATH="$HERE/src:$HERE/pylibs"
+# Load Telegram settings (TG_BOT_TOKEN / TG_CHAT_ID) for tg-send; if absent notify falls back to macOS notifications
 [ -f "$HERE/.env" ] && set -a && . "$HERE/.env" && set +a
 exec "$HERE/MonitaskCenter.app/Contents/MacOS/python-runner" "$HERE/monitask.py" "$@"
