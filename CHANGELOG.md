@@ -1,3 +1,16 @@
+## [0.3.0] - 2026-10-04
+
+### 🚀 Features
+
+- **install:** Verify launchd status
+- **tui:** Add solid thick wordmark as preferred logo tier
+- **tui:** Redraw big logo tier as solid blocks
+- **telegram:** Store the bot token in the OS credential store
+
+### 🐛 Bug Fixes
+
+- Center logo and tagline in TUI panel
+- **tui:** Widen pointer glyph to three columns
 ## [0.2.0] - 2026-10-02
 
 ### 🚀 Features
