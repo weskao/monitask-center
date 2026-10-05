@@ -1,32 +1,31 @@
 # monitask-center
 
-跑在 **launchd 背景**的 Monitask 工時**唯讀**檢查器(不是 Claude skill,不需開 Claude)。由 `uv tool` 安裝的 `monitask-center` 指令管理，設定用互動選單 `monitask-center --config`。
+跑在 **launchd 背景**的 Monitask 工時檢查器(會在固定時機自動播放/暫停)(不是 Claude skill,不需開 Claude)。由 `uv tool` 安裝的 `monitask-center` 指令管理，設定用互動選單 `monitask-center --config`。
 
 ## 核心原則
 
-**只監看，不操作。**
+**平常只監看，只在兩個固定時機按播放/暫停。**
 
-- 絕不啟動、停止、關閉或點擊 Monitask：沒有 `open -a`、不按播放/暫停、不點 Dock、不自動回應彈窗。只讀取狀態，然後通知或顯示。
-- 離座一律讓計時停：停了就是停了，不補點、不偽造工時，也沒有 F13 / 合成輸入 / 補活動。
-- 狀態讀取是 macOS Accessibility(AX)唯讀讀取桌面版 Monitask，集中在 `monitask.py` 的 `read_state()` 一個函式。
+- 只會按 Monitask 的「播放」或「暫停」，且只有 `check.decide()` 判定需要時才按：沒有 Dock 點擊、不自動回應彈窗、不關閉 App。App 沒開或視窗被隱藏時，才會 `open -a Monitask` 並等待控制項出現(最長 30 秒)，按下後輪詢確認狀態真的改變。
+- 離座不補點、不偽造工時，也沒有 F13 / 合成輸入 / 補活動。
+- 狀態讀取是 macOS Accessibility(AX)讀取桌面版 Monitask，集中在 `monitask.py` 的 `read_state()`；按鈕動作集中在 `set_playing()`。
 
 ## 每個工作日會發生什麼
 
 launchd 在設定的整點喚醒 `check`（預設 10:00 ~ 18:00，每 1 小時，18:00 那一次也會檢查）。每次檢查依序判斷：
 
 1. **今天是不是工作日**：台灣政府行事曆(含補班日) + 你自己設定的個人休假。個人休假優先於行事曆；放假/休假日不檢查、不提醒。行事曆讀不到時 **fail-open**：視為工作日，並每天最多通知一次。
-2. **午休時段略過**：預設 12:00 ~ 13:00(`[12, 13)`，13:00 那一次是正常檢查)。午休內的檢查不通知、不動作。午休只在執行時判斷，不會改動 launchd 排程。
+2. **午休時段**：預設 12:00 ~ 13:00(`[12, 13)`)。午休內的檢查若 Monitask 還在計時(`timing` / `hidden`)就**自動按暫停**並通知；已暫停或沒開則不通知、不動作。午休只在執行時判斷，不會改動 launchd 排程。
 3. **讀取 Monitask 狀態並決定**：
 
 | 狀態 | 行為 |
 |------|------|
 | `timing`(計時中；`running` 視同) | 安靜，只寫日誌 |
-| `hidden`(視窗清單為空；Monitask 計時時會隱藏視窗) | 安靜，只寫日誌，絕不去點 |
-| `paused`(已暫停) | 發提醒通知 |
-| `not-running`(App 沒開) | 發提醒通知 |
+| `hidden`(視窗清單為空；Monitask 計時時會隱藏視窗) | 安靜，只寫日誌 |
+| `paused`(已暫停) / `not-running`(App 沒開) | **開始時間與午休結束那一次**(預設 10:00、13:00)：必要時開啟 Monitask 並**自動按播放**，成功或失敗都通知；其餘整點只發提醒通知 |
 | `unknown`(Accessibility 未授權或讀取失敗) | 發一則警告通知 |
 
-沒有「下班前停止」之類的提醒。每次結果會記錄到 `~/.monitask-center/last-check.json`。
+自動播放失敗不會留下標記，下一個整點會退回提醒通知。沒有「下班前停止」之類的動作。每次結果會記錄到 `~/.monitask-center/last-check.json`。
 
 ## 首次設定
 
@@ -54,7 +53,7 @@ monitask-center install          # 一次完成其餘設定
 | 開始時間 | 第一次檢查的整點(預設 10) |
 | 結束時間 | 最後一次檢查的整點(預設 18) |
 | 間隔(小時) | 每幾小時檢查一次(預設 1，不可超過結束 - 開始) |
-| 午休略過 | 開/關(預設開) |
+| 午休略過 | 開/關(預設開)；開啟時午休內不提醒，並在午休自動暫停、午休結束自動播放 |
 | 午休開始 / 午休結束 | 午休時段 `[開始, 結束)`(預設 12 / 13) |
 | 語言 | 在 `locales/` 內現有的語言間切換 |
 | Telegram | 開：Telegram，失敗退回 macOS 通知；關：只用 macOS 通知 |
@@ -109,7 +108,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | 路徑 | 角色 |
 |------|------|
 | `TODO.md` | 待辦與建議事項 |
-| `monitask.py` | 唯讀狀態引擎(pyobjc / AX)。子命令：`check` / `status` / `dump-windows`；`read_state()` 回傳 `timing` / `paused` / `hidden` / `unknown` / `not-running` |
+| `monitask.py` | 狀態引擎(pyobjc / AX)，含 `set_playing()` 按播放/暫停。子命令：`check` / `status` / `dump-windows`；`read_state()` 回傳 `timing` / `paused` / `hidden` / `unknown` / `not-running` |
 | `run.sh` | launchd 進入點：設定 `PYTHONPATH`(`src`、`pylibs`)、載入 `.env`，再用 bundle 內 python 跑 `monitask.py` |
 | `MonitaskCenter.app` | 內含 python 副本；**AX 授權對象**(TCC 身分 `com.dannylin.monitask-center`)，勿刪 |
 | `pyfix/sitecustomize.py` | 補 `platform.mac_ver()`(僅 pip 下載 wheel 時用到) |

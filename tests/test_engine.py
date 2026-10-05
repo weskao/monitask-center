@@ -12,8 +12,10 @@ ENGINE = ROOT / "monitask.py"
 
 
 class Node:
-    def __init__(self, role, children=(), value=None, windows=None):
+    def __init__(self, role, children=(), value=None, windows=None, enabled=None):
         self.attrs = {"AXRole": role, "AXChildren": list(children), "AXValue": value}
+        if enabled is not None:
+            self.attrs["AXEnabled"] = enabled
         if windows is not None:
             self.attrs["AXWindows"] = windows
 
@@ -29,8 +31,8 @@ class FakeApp:
 @pytest.fixture
 def engine(monkeypatch):
     """monitask.py imported against fake pyobjc modules (pyobjc is not installable in the uv env)."""
-    world = types.SimpleNamespace(apps=[FakeApp()], trusted=True, windows=[], session={
-        "kCGSSessionOnConsoleKey": True, "CGSSessionScreenIsLocked": False})
+    world = types.SimpleNamespace(apps=[FakeApp()], trusted=True, windows=[], pressed=[], on_press=None,
+                                  session={"kCGSSessionOnConsoleKey": True, "CGSSessionScreenIsLocked": False})
     appkit = types.ModuleType("AppKit")
     appkit.NSWorkspace = types.SimpleNamespace(sharedWorkspace=lambda: types.SimpleNamespace(
         runningApplications=lambda: world.apps))
@@ -38,6 +40,13 @@ def engine(monkeypatch):
     ax.AXIsProcessTrusted = lambda: world.trusted
     ax.AXUIElementCreateApplication = lambda pid: Node("AXApplication", windows=world.windows)
     ax.AXUIElementSetMessagingTimeout = lambda el, s: 0
+
+    def press(el, action):
+        world.pressed.append((el, action))
+        if world.on_press:
+            world.on_press(el)
+        return 0
+    ax.AXUIElementPerformAction = press
     ax.AXUIElementCopyAttributeValue = lambda el, attr, _: (
         (0, el.attrs[attr]) if attr in el.attrs else (-25205, None))
     found = types.ModuleType("Foundation")
@@ -59,10 +68,8 @@ def window(*values):
     return Node("AXWindow", [Node("AXGroup", [Node("AXCheckBox", value=v) for v in values])])
 
 
-def test_source_has_no_press_or_dock_click():
-    src = ENGINE.read_text(encoding="utf-8")
-    assert "AXPress" not in src and "press_play_pause" not in src
-    assert "open -a" not in src and '"Dock"' not in src
+def test_source_never_clicks_the_dock():
+    assert '"Dock"' not in ENGINE.read_text(encoding="utf-8")
 
 
 def test_read_state_not_running(engine):
@@ -114,6 +121,10 @@ def routed(engine, monkeypatch):
         reads.append(1)
         return engine.world.state
     monkeypatch.setattr(engine, "read_state", fake_read)
+    presses = []
+    engine.world.press_ok = True
+    monkeypatch.setattr(engine, "set_playing", lambda playing: presses.append(playing) or engine.world.press_ok)
+    engine.presses = presses
 
     class Clock:
         @staticmethod
@@ -145,8 +156,8 @@ def test_cmd_check_telegram_setting_is_honoured(routed):
 @pytest.mark.parametrize("wd,hour,action", [
     ((False, "vacation"), 14, "skip_vacation"),
     ((False, "holiday:weekend"), 14, "skip_holiday"),
-    ((True, "workday"), 12, "skip_lunch"),
     ((True, "workday"), 8, "outside"),
+    ((False, "vacation"), 12, "skip_vacation"),
 ])
 def test_cmd_check_skips_do_not_touch_monitask(routed, wd, hour, action):
     from monitask_center import check
@@ -211,7 +222,7 @@ def offline(routed, monkeypatch):
     return routed
 
 
-@pytest.mark.parametrize("hour,action", [(12, "skip_lunch"), (9, "outside"), (19, "outside")])
+@pytest.mark.parametrize("hour,action", [(9, "outside"), (19, "outside")])
 def test_cmd_check_gates_run_before_calendar(offline, hour, action):
     from monitask_center import check
     offline.world.hour = hour
@@ -237,3 +248,154 @@ def test_cmd_check_decision_log_is_translated(routed, monkeypatch):
     assert "check.decision" not in line and "workday=workday" not in line
     from monitask_center import status
     assert status.state_text("timing") in line and status.action_text("ok") in line
+
+
+def controls(play_value, play_enabled, pause_enabled):
+    """A Monitask window as AX shows it: [0] Play, [1] Pause."""
+    return [Node("AXWindow", [Node("AXGroup", [
+        Node("AXCheckBox", value=play_value, enabled=play_enabled),
+        Node("AXCheckBox", value=0, enabled=pause_enabled)])])]
+
+
+def test_read_state_reopened_panel_with_stale_play_value_is_timing(engine):
+    engine.world.windows = controls(0, False, True)  # Play disabled + Pause enabled = tracking
+    assert engine.read_state() == "timing"
+
+
+def test_read_state_paused_when_play_is_enabled(engine):
+    engine.world.windows = controls(0, True, False)
+    assert engine.read_state() == "paused"
+
+
+@pytest.fixture
+def stage(engine, monkeypatch):
+    """set_playing against a fake clock; open_app is recorded and can reveal windows / start the app."""
+    clock = [0.0]
+    monkeypatch.setattr(engine, "time", types.SimpleNamespace(
+        monotonic=lambda: clock[0], sleep=lambda s: clock.__setitem__(0, clock[0] + s)))
+    engine.world.opened = []
+    engine.world.clock = clock
+
+    def open_app():
+        engine.world.opened.append(1)
+        engine.world.on_open()
+    monkeypatch.setattr(engine, "open_app", open_app)
+    engine.world.on_open = lambda: None
+    return engine
+
+
+def box(windows, index):
+    """The index-th checkbox of a controls() window: 0 = Play, 1 = Pause."""
+    return windows[0].attrs["AXChildren"][0].attrs["AXChildren"][index]
+
+
+def test_set_playing_presses_play_when_paused(stage):
+    stage.world.windows = controls(0, True, False)
+    play = box(stage.world.windows, 0)
+    stage.world.on_press = lambda el: setattr(stage.world, "windows", [])  # timing hides the window
+    assert stage.set_playing(True) is True
+    assert stage.world.pressed == [(play, "AXPress")]
+    assert stage.world.opened == []
+
+
+def test_set_playing_cold_launch_opens_waits_then_presses_play(stage):
+    stage.world.apps = []
+    launched = controls(0, True, False)
+
+    def launch():
+        stage.world.apps = [FakeApp()]
+        stage.world.windows = launched
+    stage.world.on_open = launch
+    stage.world.on_press = lambda el: setattr(stage.world, "windows", [])
+    assert stage.set_playing(True) is True
+    assert stage.world.opened == [1]
+    assert stage.world.pressed == [(box(launched, 0), "AXPress")]
+
+
+def test_set_playing_pause_reveals_the_hidden_window_and_presses_pause(stage):
+    # A timing Monitask hides its window: pausing needs it reopened first.
+    stage.world.windows = []
+    revealed = controls(0, False, True)
+    stage.world.on_open = lambda: setattr(stage.world, "windows", revealed)
+    stage.world.on_press = lambda el: setattr(stage.world, "windows", controls(0, True, False))
+    assert stage.set_playing(False) is True
+    assert stage.world.opened == [1]
+    assert stage.world.pressed == [(box(revealed, 1), "AXPress")]
+
+
+def test_set_playing_gives_up_without_pressing_when_controls_never_appear(stage):
+    stage.world.apps = []
+    assert stage.set_playing(True) is False
+    assert stage.world.pressed == []
+    assert stage.world.opened == [1]  # opened once, not on every poll
+    assert stage.world.clock[0] <= stage.LAUNCH_TIMEOUT_S + stage.POLL_S
+
+
+def test_set_playing_false_when_state_never_changes(stage):
+    stage.world.windows = controls(0, True, False)  # press is a no-op
+    assert stage.set_playing(True) is False
+    assert len(stage.world.pressed) == 1
+    assert stage.world.clock[0] <= stage.LAUNCH_TIMEOUT_S + stage.VERIFY_TIMEOUT_S + stage.POLL_S
+
+
+def test_cmd_check_auto_plays_at_session_start(routed):
+    from monitask_center import check
+    routed.world.hour, routed.world.state = 10, "paused"
+    routed.cmd_check()
+    assert routed.presses == [True]
+    assert routed.sent == [(routed.t("check.play_ok"), True)]
+    assert check.last_check()["action"] == "play"
+
+
+def test_cmd_check_auto_plays_after_lunch_when_app_closed(routed):
+    routed.world.hour, routed.world.state = 13, "not-running"
+    routed.cmd_check()
+    assert routed.presses == [True]
+
+
+def test_cmd_check_play_failure_notifies_and_records_failure(routed):
+    from monitask_center import check
+    routed.world.hour, routed.world.state, routed.world.press_ok = 10, "paused", False
+    routed.cmd_check()
+    assert routed.sent == [(routed.t("check.play_failed"), True)]
+    assert check.last_check()["action"] == "play_failed"
+
+
+def test_cmd_check_mid_session_paused_only_reminds(routed):
+    routed.world.hour, routed.world.state = 14, "paused"
+    routed.cmd_check()
+    assert routed.presses == []
+    assert routed.sent[0][0] == routed.t("check.remind_paused")
+
+
+@pytest.mark.parametrize("state", ["timing", "hidden"])
+def test_cmd_check_pauses_a_running_timer_at_lunch(routed, state):
+    from monitask_center import check
+    routed.world.hour, routed.world.state = 12, state
+    routed.cmd_check()
+    assert routed.presses == [False]
+    assert routed.sent == [(routed.t("check.pause_ok"), True)]
+    assert check.last_check()["action"] == "pause"
+
+
+def test_cmd_check_pause_failure_notifies(routed):
+    from monitask_center import check
+    routed.world.hour, routed.world.state, routed.world.press_ok = 12, "timing", False
+    routed.cmd_check()
+    assert routed.sent == [(routed.t("check.pause_failed"), True)]
+    assert check.last_check()["action"] == "pause_failed"
+
+
+def test_cmd_check_lunch_already_paused_is_silent(routed):
+    from monitask_center import check
+    routed.world.hour, routed.world.state = 12, "paused"
+    routed.cmd_check()
+    assert routed.presses == [] and routed.sent == []
+    assert check.last_check()["action"] == "skip_lunch"
+
+
+def test_cmd_check_locked_screen_never_presses(routed):
+    routed.world.hour, routed.world.state = 10, "paused"
+    routed.world.session = {"kCGSSessionOnConsoleKey": True, "CGSSessionScreenIsLocked": True}
+    routed.cmd_check()
+    assert routed.presses == [] and routed.sent == []

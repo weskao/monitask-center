@@ -22,7 +22,7 @@ SCAN_FILES = [*PY_FILES, ROOT / "run.sh", ROOT / "Makefile"]
 
 CJK_RE = re.compile("[一-鿿　-ヿ＀-￯]")
 FORBIDDEN_RE = re.compile(
-    r"press_play_pause|open -a|AXPress|ensure_window|PAUSE_KEYWORDS|FORBID_KEYWORDS"
+    r"press_play_pause|ensure_window|PAUSE_KEYWORDS|FORBID_KEYWORDS"
     r"|schedule\.json|auto_start|auto_pause_at_end")
 
 # Keys built as f"<prefix>{x}": the prefix must exist in the code AND each suffix must be

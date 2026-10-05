@@ -15,17 +15,21 @@ QUIET_STATES = ("running", "timing", "hidden")  # hidden = Monitask hides its wi
 
 
 def decide(hour: int, settings: config.Settings, workday: tuple[bool, str], state: str) -> str:
-    """-> outside | skip_vacation | skip_holiday | skip_lunch | ok | remind | warn_unknown."""
+    """-> outside | skip_vacation | skip_holiday | skip_lunch | ok | remind | warn_unknown | play | pause.
+
+    play = paused/not-running at a session start; pause = timer still running during lunch."""
     if not settings.start_hour <= hour <= settings.end_hour:
         return "outside"
     is_workday, reason = workday
     if not is_workday:
         return "skip_vacation" if reason == "vacation" else "skip_holiday"
     if settings.is_lunch(hour):
-        return "skip_lunch"
+        return "pause" if state in QUIET_STATES else "skip_lunch"
     if state in QUIET_STATES:
         return "ok"
-    return "remind" if state in ("paused", "not-running") else "warn_unknown"
+    if state in ("paused", "not-running"):
+        return "play" if hour in settings.play_hours() else "remind"
+    return "warn_unknown"
 
 
 def last_check_path() -> Path:

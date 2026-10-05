@@ -13,14 +13,15 @@ def decide(hour, state="paused", settings=None, workday=WORK):
 def test_lunch_window_is_silent_and_13_runs():
     assert decide(12, "paused") == "skip_lunch"
     assert decide(12, "not-running") == "skip_lunch"
-    assert decide(13, "paused") == "remind"
+    assert decide(13, "paused") == "play"
 
 
 def test_lunch_follows_shifted_window_hours_and_interval():
     s = Settings(start_hour=9, end_hour=20, interval_hours=2, lunch_start_hour=11, lunch_end_hour=13)
     assert [h for h in s.check_hours() if decide(h, "paused", s) == "skip_lunch"] == [11]
-    assert decide(13, "paused", s) == "remind"
-    assert decide(9, "paused", s) == "remind"
+    assert decide(13, "paused", s) == "play"
+    assert decide(9, "paused", s) == "play"
+    assert decide(15, "paused", s) == "remind"
 
 
 def test_lunch_skip_off_checks_normally():
@@ -66,3 +67,36 @@ def test_last_check_roundtrip_and_corrupt():
     assert set(got) == {"time", "action", "state"}
     check.last_check_path().write_text("not json")
     assert check.last_check() is None
+
+
+@pytest.mark.parametrize("hour", [10, 13])
+@pytest.mark.parametrize("state", ["paused", "not-running"])
+def test_session_start_hours_auto_play(hour, state):
+    assert decide(hour, state) == "play"  # start hour and the tick when lunch ends
+
+
+def test_session_start_hours_stay_quiet_when_timing():
+    assert decide(10, "timing") == "ok"
+    assert decide(13, "hidden") == "ok"
+
+
+def test_other_hours_only_remind_never_play():
+    assert decide(11, "paused") == "remind"
+    assert decide(15, "not-running") == "remind"
+
+
+def test_lunch_without_skip_has_no_second_play_hour():
+    assert decide(13, "paused", Settings(lunch_skip=False)) == "remind"
+
+
+@pytest.mark.parametrize("state", ["timing", "running", "hidden"])
+def test_lunch_pauses_a_running_timer(state):
+    assert decide(12, state) == "pause"
+
+
+def test_lunch_pause_is_off_when_lunch_skip_is_off():
+    assert decide(12, "timing", Settings(lunch_skip=False)) == "ok"
+
+
+def test_unknown_still_warns_at_session_start():
+    assert decide(10, "unknown") == "warn_unknown"

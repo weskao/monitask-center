@@ -1,6 +1,6 @@
 {
   "tui.title": "Monitask Center 設定",
-  "tui.tagline": "唯讀工作日工時檢查器",
+  "tui.tagline": "工作日工時檢查器",
   "tui.row.start": "開始時間",
   "tui.row.end": "結束時間",
   "tui.row.interval": "檢查間隔",
@@ -14,7 +14,7 @@
   "tui.help.start": "每天第一次檢查的整點(0–22),需早於結束時間",
   "tui.help.end": "最後一次檢查的整點(1–23),需晚於開始時間",
   "tui.help.interval": "每隔幾小時檢查一次,最多為結束減開始",
-  "tui.help.lunch_skip": "開啟時,午休時段內的檢查不發通知",
+  "tui.help.lunch_skip": "開啟時,午休內不提醒,並自動暫停、午休結束自動播放",
   "tui.help.lunch_start": "午休開始的整點,午休時段內不提醒",
   "tui.help.lunch_end": "午休結束的整點(不含),此時的檢查照常進行",
   "tui.help.language": "介面與通知使用的語言,切換後立即生效",

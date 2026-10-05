@@ -215,3 +215,9 @@ def test_unwritable_backup_does_not_break_loading(monkeypatch):
     _write("not json")
     monkeypatch.setattr("builtins.open", lambda *a, **k: (_ for _ in ()).throw(PermissionError("ro")))
     assert config.load() == Settings() and config.corrupt_backup() is None
+
+
+def test_play_hours_are_start_and_lunch_end():
+    assert Settings().play_hours() == {10, 13}
+    assert Settings(lunch_skip=False).play_hours() == {10}
+    assert Settings(start_hour=9, lunch_end_hour=14).play_hours() == {9, 14}

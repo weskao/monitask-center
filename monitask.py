@@ -2,19 +2,22 @@
 """Read-only Monitask state engine (pyobjc / AX), run by run.sh under the bundled python.
 
 Commands:
-  check         hourly check (launchd): decide, then notify only for remind / warn_unknown
+  check         hourly check (launchd): decide, then notify (remind / warn_unknown) or press
+                Play at a session start / Pause at lunch
   status        key=value lines (accessibility_trusted, running, state, gui_session)
   dump-windows  print window / control structure
 
-Never starts, stops, launches or clicks anything: it only reads state.
-The AX helpers handle a locked screen, cold start and the NSWorkspace cache.
+Reads state through AX; the only thing it ever presses is Play/Pause (set_playing), and only when
+check.decide() says so. The AX helpers handle a locked screen, cold start and the NSWorkspace cache.
 """
 
 from __future__ import annotations
 
 import fcntl
 import os
+import subprocess
 import sys
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -34,6 +37,9 @@ from monitask_center.i18n import t
 APP_NAME = "Monitask"
 AX_API_DISABLED = -25211
 AX_TIMEOUT_S = 10.0
+LAUNCH_TIMEOUT_S = 30   # max wait after `open -a` for the Play/Pause controls to appear
+VERIFY_TIMEOUT_S = 15   # max wait after pressing for the state to flip
+POLL_S = 0.5
 
 _last_error = ""  # why the last read_state() returned "unknown"
 
@@ -91,8 +97,16 @@ def checkboxes(app) -> list:
     return out
 
 
+def _is_timing(play, pause) -> bool:
+    if ax_value(play, "AXValue"):
+        return True
+    # A panel reopened while tracking shows a stale Play value of 0; Play disabled + Pause
+    # enabled is the reliable "tracking" signal.
+    return not ax_value(play, "AXEnabled") and bool(ax_value(pause, "AXEnabled"))
+
+
 def read_state() -> str:
-    """not-running | unknown | hidden | timing | paused. Strictly read-only."""
+    """not-running | unknown | hidden | timing | paused. Read-only."""
     global _last_error
     _last_error = ""
     app = running_app()
@@ -111,10 +125,58 @@ def read_state() -> str:
         if len(boxes) < 2:
             _last_error = t("check.err.checkboxes", count=len(boxes))
             return "unknown"
-        return "timing" if bool(ax_value(boxes[0], "AXValue")) else "paused"
+        return "timing" if _is_timing(boxes[0], boxes[1]) else "paused"
     except Exception as exc:  # noqa: BLE001 - any AX failure is "unknown", never a crash
         _last_error = t("check.err.exception", error=exc)
         return "unknown"
+
+
+def open_app() -> None:
+    subprocess.run(["/usr/bin/open", "-a", APP_NAME], timeout=10, check=False)
+
+
+def set_playing(playing: bool) -> bool:
+    """Press Play (True) or Pause (False) and confirm the state flipped.
+
+    Opens Monitask first when it is closed or hiding its window (it hides while timing), once,
+    then waits up to LAUNCH_TIMEOUT_S for the two controls. Raises RuntimeError if AX is untrusted."""
+    deadline = time.monotonic() + LAUNCH_TIMEOUT_S
+    opened = False
+    while time.monotonic() < deadline:
+        app = running_app()
+        boxes = checkboxes(app) if app else []
+        if len(boxes) >= 2:
+            break
+        if not opened:
+            open_app()
+            opened = True
+        time.sleep(POLL_S)
+    else:
+        return False
+    # Two controls, not one toggle: [0] is Play, [1] is Pause; the active one is disabled.
+    AX.AXUIElementPerformAction(boxes[0 if playing else 1], "AXPress")
+    want = ("timing", "hidden") if playing else ("paused",)  # hidden: the window closes once timing
+    deadline = time.monotonic() + VERIFY_TIMEOUT_S
+    while time.monotonic() < deadline:
+        if read_state() in want:
+            return True
+        time.sleep(POLL_S)
+    return False
+
+
+def press(action: str, telegram: bool) -> str:
+    """Run a play/pause decision and notify the outcome -> action, or action_failed."""
+    try:
+        ok = set_playing(action == "play")
+    except Exception as exc:  # noqa: BLE001 - a failed press must still notify, never crash the tick
+        notify.log(t("check.err.exception", error=exc))
+        ok = False
+    if action == "play":
+        message = t("check.play_ok") if ok else t("check.play_failed")
+    else:
+        message = t("check.pause_ok") if ok else t("check.pause_failed")
+    notify.notify(message, telegram)
+    return action if ok else f"{action}_failed"
 
 
 def cmd_check() -> int:
@@ -122,14 +184,14 @@ def cmd_check() -> int:
     settings = config.load()
     i18n.set_language(settings.language)
     hour = datetime.now().hour
-    # Pure window/lunch gates first: no calendar access (download / warning) and no AX read.
+    # Pure window gate first: no calendar access (download / warning) and no AX read.
     action = check.decide(hour, settings, (True, "workday"), "timing")
     wd, state, reason = None, "n/a", t("check.reason_unchecked")
-    if action not in ("outside", "skip_lunch"):
+    if action != "outside":
         wd = workday.workday_status(date.today(), settings)
         reason = reason_text(wd[1])
         action = check.decide(hour, settings, wd, "timing")
-        if action == "ok":
+        if action in ("ok", "pause"):  # lunch needs the real state to know whether to pause
             if not gui_session_available():
                 notify.log(t("check.locked"))
                 check.record_last_check("locked", "n/a")  # quiet and read-only, but not stale
@@ -143,6 +205,8 @@ def cmd_check() -> int:
         notify.notify(t(key), settings.telegram)
     elif action == "warn_unknown":
         notify.notify(t("check.warn_unknown", error=_last_error or state), settings.telegram)
+    elif action in ("play", "pause"):
+        action = press(action, settings.telegram)
     check.record_last_check(action, state)
     return 0
 

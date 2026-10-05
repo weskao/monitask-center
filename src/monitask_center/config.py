@@ -55,6 +55,10 @@ class Settings:
     def check_hours(self) -> list[int]:
         return [*range(self.start_hour, self.end_hour, self.interval_hours), self.end_hour]
 
+    def play_hours(self) -> set[int]:
+        """Ticks that auto-press Play: the first check, and the one when lunch ends."""
+        return {self.start_hour} | ({self.lunch_end_hour} if self.lunch_skip else set())
+
     def is_lunch(self, hour: int) -> bool:
         """Runtime decision only: lunch never changes the launchd schedule."""
         return self.lunch_skip and self.lunch_start_hour <= hour < self.lunch_end_hour
