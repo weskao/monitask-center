@@ -1,3 +1,13 @@
+## [1.0.0] - 2026-10-05
+
+### 🚀 Features
+
+- **check:** [**breaking**] Auto play and pause monitask
+- **engine:** Read state from local period files
+
+### 📚 Documentation
+
+- **todo:** Add high-priority task for local-file-based Monitask state detection
 ## [0.3.0] - 2026-10-04
 
 ### 🚀 Features
