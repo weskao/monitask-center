@@ -217,27 +217,17 @@ def test_invalid_token_fails_before_launchd(system, tmp_path, capsys):
     assert "not a token" not in capsys.readouterr().err
 
 
-def test_untrusted_accessibility_fails_before_launchd(system, capsys):
+def test_install_without_accessibility_never_prompts_or_opens_settings(system, capsys):
     system.trusted = False
-    assert run() == 1
-    assert system.count("loaded") == 0 and not launchd.plist_path("check").exists()
+
+    def unexpected_input(prompt=""):
+        pytest.fail("installation requested an Accessibility grant")
+
+    assert run(input_fn=unexpected_input) == 0
+    assert system.count("loaded") == 1 and launchd.plist_path("check").exists()
     assert system.count("open") == 0
     captured = capsys.readouterr()
-    assert t("install.err.accessibility") in captured.err and t("install.done") not in captured.out
-
-
-def test_accessibility_pane_opened_on_request_and_granted_on_recheck(system):
-    system.trusted = False
-    asked = []
-
-    def enter(prompt=""):
-        system.trusted = True  # user flips the switch while the prompt waits
-        asked.append(prompt)
-        return ""
-
-    # Decline Telegram, confirm only the accessibility pane: both steps share `confirm`.
-    assert run(confirm=lambda q: q == t("install.ax.open_ask"), input_fn=enter) == 0
-    assert system.count("open") == 1 and system.count("loaded") == 1
+    assert t("install.done") in captured.out and captured.err == ""
 
 
 def test_bootstrap_failure_is_nonzero_without_completion_message(system, capsys):

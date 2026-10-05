@@ -1,5 +1,5 @@
 #!/opt/homebrew/opt/python@3.13/bin/python3.13
-"""Read-only Monitask state engine (pyobjc / AX), run by run.sh under the bundled python.
+"""Monitask state engine (local Period files), run by run.sh under the bundled python.
 
 Commands:
   check         hourly check (launchd): decide, then notify (remind / warn_unknown) or press
@@ -7,18 +7,19 @@ Commands:
   status        key=value lines (accessibility_trusted, running, state, gui_session)
   dump-windows  print window / control structure
 
-Reads state through AX; the only thing it ever presses is Play/Pause (set_playing), and only when
-check.decide() says so. The AX helpers handle a locked screen, cold start and the NSWorkspace cache.
+Reads state without AX; Play/Pause (set_playing) still requires AX and only runs when
+check.decide() says so. AX confirms button actions immediately; Period updates can lag.
 """
 
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import subprocess
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -40,6 +41,7 @@ AX_TIMEOUT_S = 10.0
 LAUNCH_TIMEOUT_S = 30   # max wait after `open -a` for the Play/Pause controls to appear
 VERIFY_TIMEOUT_S = 15   # max wait after pressing for the state to flip
 POLL_S = 0.5
+PERIOD_MAX_AGE_S = 180  # allow two missed minute updates; calibrate after a real pause observation
 
 _last_error = ""  # why the last read_state() returned "unknown"
 
@@ -106,28 +108,28 @@ def _is_timing(play, pause) -> bool:
 
 
 def read_state() -> str:
-    """not-running | unknown | hidden | timing | paused. Read-only."""
+    """not-running | unknown | timing | paused. Read-only; no AX permission needed."""
     global _last_error
     _last_error = ""
-    app = running_app()
-    if app is None:
+    if running_app() is None:
         return "not-running"
     try:
-        if not AX.AXIsProcessTrusted():
-            _last_error = t("engine.ax_untrusted", path=os.path.realpath(sys.executable))
-            return "unknown"
-        wins = windows(app)
-        if not wins:  # Monitask hides its window while timing
-            return "hidden"
-        boxes: list = []
-        for w in wins:
-            _collect(w, "AXCheckBox", boxes)
-        if len(boxes) < 2:
-            _last_error = t("check.err.checkboxes", count=len(boxes))
-            return "unknown"
-        return "timing" if _is_timing(boxes[0], boxes[1]) else "paused"
-    except Exception as exc:  # noqa: BLE001 - any AX failure is "unknown", never a crash
-        _last_error = t("check.err.exception", error=exc)
+        periods = Path.home() / "Library/Application Support/Monitask/Periods"
+        latest = max((p for p in periods.iterdir() if p.suffix == ".json"),
+                     key=lambda p: p.stat().st_mtime_ns, default=None)
+        if latest is None:
+            raise ValueError("no period files")
+        data = json.loads(latest.read_text(encoding="utf-8"))
+        active = datetime.fromisoformat(data["DateLastActive"].replace("Z", "+00:00"))
+        if active.utcoffset() is None:
+            raise ValueError("timestamp has no timezone")
+        age = (datetime.now(timezone.utc) - active).total_seconds()
+        if age < 0:
+            raise ValueError("timestamp is in the future")
+        # ponytail: freshness infers timing with up to 3 min pause lag; use a direct signal if available.
+        return "timing" if age < PERIOD_MAX_AGE_S else "paused"
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        _last_error = t("engine.period_error", error=type(exc).__name__)
         return "unknown"
 
 
@@ -140,6 +142,8 @@ def set_playing(playing: bool) -> bool:
 
     Opens Monitask first when it is closed or hiding its window (it hides while timing), once,
     then waits up to LAUNCH_TIMEOUT_S for the two controls. Raises RuntimeError if AX is untrusted."""
+    if not AX.AXIsProcessTrusted():
+        raise RuntimeError(t("engine.ax_untrusted", path=os.path.realpath(sys.executable)))
     deadline = time.monotonic() + LAUNCH_TIMEOUT_S
     opened = False
     while time.monotonic() < deadline:
@@ -155,11 +159,15 @@ def set_playing(playing: bool) -> bool:
         return False
     # Two controls, not one toggle: [0] is Play, [1] is Pause; the active one is disabled.
     AX.AXUIElementPerformAction(boxes[0 if playing else 1], "AXPress")
-    want = ("timing", "hidden") if playing else ("paused",)  # hidden: the window closes once timing
     deadline = time.monotonic() + VERIFY_TIMEOUT_S
     while time.monotonic() < deadline:
-        if read_state() in want:
-            return True
+        app = running_app()
+        if app is not None:
+            if playing and not windows(app):  # Monitask hides its window once timing
+                return True
+            boxes = checkboxes(app)
+            if len(boxes) >= 2 and _is_timing(boxes[0], boxes[1]) == playing:
+                return True
         time.sleep(POLL_S)
     return False
 
@@ -184,7 +192,7 @@ def cmd_check() -> int:
     settings = config.load()
     i18n.set_language(settings.language)
     hour = datetime.now().hour
-    # Pure window gate first: no calendar access (download / warning) and no AX read.
+    # Pure window gate first: no calendar access (download / warning) and no state read.
     action = check.decide(hour, settings, (True, "workday"), "timing")
     wd, state, reason = None, "n/a", t("check.reason_unchecked")
     if action != "outside":

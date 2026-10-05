@@ -3,7 +3,6 @@
   "check.locked": "螢幕鎖定或無 console,略過檢查",
   "check.decision": "{hour}:00 判斷={action} 狀態={state} 工作日={reason}",
   "check.reason_unchecked": "未查詢",
-  "check.err.checkboxes": "找到的 checkbox 數量不足:{count}",
   "check.err.exception": "讀取失敗:{error}",
   "config.corrupt": "設定檔無法讀取,已改用預設值:{path}({reason})",
   "check.remind_paused": "Monitask 目前已暫停,請記得開始計時",
@@ -12,11 +11,12 @@
   "check.play_failed": "Monitask 自動開始計時失敗,請手動確認",
   "check.pause_ok": "午休:Monitask 已自動暫停",
   "check.pause_failed": "午休:Monitask 自動暫停失敗,請手動確認",
-  "check.warn_unknown": "無法讀取 Monitask 狀態(請確認輔助使用權限):{error}",
+  "check.warn_unknown": "無法讀取 Monitask 狀態(請確認本機 Period 檔案):{error}",
   "check.error": "檢查發生錯誤:{error}",
   "engine.ax_untrusted": "輔助使用權限未授予給 {path}",
   "engine.not_running": "Monitask 未執行",
   "engine.window": "視窗[{index}] 標題={title} 子角色={subrole}",
   "engine.window_detail": "  checkbox={boxes} 按鈕={buttons}",
-  "engine.usage": "用法:{prog} {{{commands}}}"
+  "engine.usage": "用法:{prog} {{{commands}}}",
+  "engine.period_error": "無法讀取 Monitask 本機 Period 檔案或時間戳記:{error}"
 }

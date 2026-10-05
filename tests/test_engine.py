@@ -1,6 +1,9 @@
 import importlib.util
+import json
+import os
 import sys
 import types
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -64,10 +67,6 @@ def engine(monkeypatch):
     return module
 
 
-def window(*values):
-    return Node("AXWindow", [Node("AXGroup", [Node("AXCheckBox", value=v) for v in values])])
-
-
 def test_source_never_clicks_the_dock():
     assert '"Dock"' not in ENGINE.read_text(encoding="utf-8")
 
@@ -77,32 +76,59 @@ def test_read_state_not_running(engine):
     assert engine.read_state() == "not-running"
 
 
-def test_read_state_untrusted_is_unknown(engine):
+@pytest.mark.parametrize("timestamp,expected", [
+    ("2026-01-02T12:00:00.0000000Z", "timing"),
+    ("2026-01-02T11:57:01+00:00", "timing"),
+    ("2026-01-02T11:57:00Z", "paused"),
+    ("2026-01-02T11:56:00Z", "paused"),
+    ("2026-01-02T19:59:59.1234567+08:00", "timing"),
+])
+def test_read_state_uses_latest_period_without_accessibility(engine, timestamp, expected):
     engine.world.trusted = False
-    engine.world.windows = [window(1, 0)]
-    assert engine.read_state() == "unknown"
+    periods = Path.home() / "Library/Application Support/Monitask/Periods"
+    periods.mkdir(parents=True)
+    now = datetime(2026, 1, 2, 12, tzinfo=timezone.utc)
 
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
 
-def test_read_state_hidden_when_no_windows(engine):
-    assert engine.read_state() == "hidden"
-
-
-def test_read_state_too_few_checkboxes_is_unknown(engine):
-    engine.world.windows = [window(1)]
-    assert engine.read_state() == "unknown"
-
-
-@pytest.mark.parametrize("first,expected", [(1, "timing"), (0, "paused")])
-def test_read_state_first_checkbox_decides(engine, first, expected):
-    engine.world.windows = [window(first, 1 - first)]
+    engine.datetime = Clock
+    old = periods / "z-old.json"
+    old.write_text(json.dumps({"DateLastActive": "2026-01-02T11:59:59.1234567Z"}))
+    os.utime(old, (1, 1))
+    latest = periods / "a-latest.json"
+    latest.write_text(json.dumps({"DateLastActive": timestamp,
+                                  "DateEnd": now.isoformat()}))
     assert engine.read_state() == expected
+    assert engine._last_error == ""
 
 
-def test_read_state_ax_error_is_unknown(engine, monkeypatch):
-    def boom(app):
-        raise RuntimeError("ax disabled")
-    monkeypatch.setattr(engine, "windows", boom)
+@pytest.mark.parametrize("body", ['{', '[]', '{}', '{"DateLastActive": null}',
+                                  '{"DateLastActive": "invalid"}',
+                                  '{"DateLastActive": "2026-01-02T12:00:00"}',
+                                  '{"DateLastActive": "2999-01-01T00:00:00Z"}'])
+def test_read_state_invalid_latest_period_is_unknown(engine, body):
+    periods = Path.home() / "Library/Application Support/Monitask/Periods"
+    periods.mkdir(parents=True)
+    old = periods / "old.json"
+    old.write_text(json.dumps({"DateLastActive": datetime.now(timezone.utc).isoformat()}))
+    os.utime(old, (1, 1))
+    (periods / "period.json").write_text(body)
     assert engine.read_state() == "unknown"
+    assert engine._last_error and not engine._last_error.startswith("engine.")
+
+
+def test_read_state_empty_period_directory_is_unknown(engine):
+    (Path.home() / "Library/Application Support/Monitask/Periods").mkdir(parents=True)
+    assert engine.read_state() == "unknown"
+    assert engine._last_error
+
+
+def test_read_state_missing_directory_is_unknown(engine):
+    assert engine.read_state() == "unknown"
+    assert engine._last_error
 
 
 @pytest.fixture
@@ -178,24 +204,13 @@ def test_cmd_check_locked_screen_does_no_ui_work(routed):
 
 
 def test_status_prints_key_values(engine, capsys):
-    engine.world.windows = [window(1, 0)]
+    periods = Path.home() / "Library/Application Support/Monitask/Periods"
+    periods.mkdir(parents=True)
+    (periods / "period.json").write_text(json.dumps({"DateLastActive": datetime.now(timezone.utc).isoformat()}))
     engine.cmd_status()
     out = dict(line.split("=") for line in capsys.readouterr().out.split())
     assert out == {"accessibility_trusted": "True", "running": "True",
                    "state": "timing", "gui_session": "True"}
-
-
-def test_last_error_uses_catalog_keys(engine, monkeypatch):
-    engine.world.windows = [window(1)]
-    assert engine.read_state() == "unknown"
-    assert engine._last_error == engine.t("check.err.checkboxes", count=1) != "check.err.checkboxes"
-    assert "checkboxes=" not in engine._last_error
-
-    def boom(app):
-        raise RuntimeError("ax disabled")
-    monkeypatch.setattr(engine, "windows", boom)
-    engine.read_state()
-    assert engine._last_error == engine.t("check.err.exception", error="ax disabled")
 
 
 def test_cmd_check_enables_stdout_logging(routed, monkeypatch):
@@ -257,16 +272,6 @@ def controls(play_value, play_enabled, pause_enabled):
         Node("AXCheckBox", value=0, enabled=pause_enabled)])])]
 
 
-def test_read_state_reopened_panel_with_stale_play_value_is_timing(engine):
-    engine.world.windows = controls(0, False, True)  # Play disabled + Pause enabled = tracking
-    assert engine.read_state() == "timing"
-
-
-def test_read_state_paused_when_play_is_enabled(engine):
-    engine.world.windows = controls(0, True, False)
-    assert engine.read_state() == "paused"
-
-
 @pytest.fixture
 def stage(engine, monkeypatch):
     """set_playing against a fake clock; open_app is recorded and can reveal windows / start the app."""
@@ -321,6 +326,14 @@ def test_set_playing_pause_reveals_the_hidden_window_and_presses_pause(stage):
     assert stage.set_playing(False) is True
     assert stage.world.opened == [1]
     assert stage.world.pressed == [(box(revealed, 1), "AXPress")]
+
+
+def test_set_playing_without_accessibility_does_not_open_or_press(stage):
+    stage.world.trusted = False
+    stage.world.windows = controls(0, True, False)
+    with pytest.raises(RuntimeError):
+        stage.set_playing(True)
+    assert stage.world.opened == [] and stage.world.pressed == []
 
 
 def test_set_playing_gives_up_without_pressing_when_controls_never_appear(stage):

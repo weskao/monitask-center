@@ -8,7 +8,8 @@
 
 - 只會按 Monitask 的「播放」或「暫停」，且只有 `check.decide()` 判定需要時才按：沒有 Dock 點擊、不自動回應彈窗、不關閉 App。App 沒開或視窗被隱藏時，才會 `open -a Monitask` 並等待控制項出現(最長 30 秒)，按下後輪詢確認狀態真的改變。
 - 離座不補點、不偽造工時，也沒有 F13 / 合成輸入 / 補活動。
-- 狀態讀取是 macOS Accessibility(AX)讀取桌面版 Monitask，集中在 `monitask.py` 的 `read_state()`；按鈕動作集中在 `set_playing()`。
+- 狀態讀取集中在 `monitask.py` 的 `read_state()`：先確認 App 是否執行，再讀 `~/Library/Application Support/Monitask/Periods/` 中最後修改的 JSON；`DateLastActive` 距今小於 180 秒視為 `timing`，否則為 `paused`。不需 Accessibility(AX)權限；自動播放/暫停仍透過 `set_playing()` 使用 AX，並以按鈕狀態即時確認結果。
+- 180 秒是暫定門檻(`PERIOD_MAX_AGE_S`)；檔案約每分鐘更新，暫停後最多約 3 分鐘才會辨識為 `paused`。尚待實際暫停觀察校準；`DateLastActive` 反映活動時間，不能保證等同計時器即時狀態。
 
 ## 每個工作日會發生什麼
 
@@ -21,9 +22,8 @@ launchd 在設定的整點喚醒 `check`（預設 10:00 ~ 18:00，每 1 小時�
 | 狀態 | 行為 |
 |------|------|
 | `timing`(計時中；`running` 視同) | 安靜，只寫日誌 |
-| `hidden`(視窗清單為空；Monitask 計時時會隱藏視窗) | 安靜，只寫日誌 |
 | `paused`(已暫停) / `not-running`(App 沒開) | **開始時間與午休結束那一次**(預設 10:00、13:00)：必要時開啟 Monitask 並**自動按播放**，成功或失敗都通知；其餘整點只發提醒通知 |
-| `unknown`(Accessibility 未授權或讀取失敗) | 發一則警告通知 |
+| `unknown`(Period 目錄/檔案缺少或無法讀取、格式錯誤或時間戳記不合法) | 發一則警告通知 |
 
 自動播放失敗不會留下標記，下一個整點會退回提醒通知。沒有「下班前停止」之類的動作。每次結果會記錄到 `~/.monitask-center/last-check.json`。
 
@@ -36,10 +36,10 @@ uv tool install --editable .     # 安裝 monitask-center 指令
 monitask-center install          # 一次完成其餘設定
 ```
 
-`monitask-center install` 會依序：確認檔案 → 準備執行環境 → (選用)設定 Telegram → 檢查 Accessibility → 載入 launchd job → 最終驗證。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
+`monitask-center install` 會依序：確認檔案 → 準備執行環境 → (選用)設定 Telegram → 載入 launchd job → 最終驗證。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
 
 - **執行環境全自動**：缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；`MonitaskCenter.app` 內的 python runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
-- **Accessibility 必須手動授予給 `MonitaskCenter.app`**：到「系統設定 → 隱私權與安全性 → 輔助使用」加入並開啟它(安裝程式可替你開啟該設定頁)。未授權時安裝會停止，授權後重跑 `monitask-center install`。
+- **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`；未授權時動作會回報失敗並通知，監看與一般提醒照常運作。`dump-windows` 診斷也需要 AX。
 - **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入專案目錄 `.env`(權限 600，已被 `.gitignore` 排除，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。Telegram 關閉或傳送失敗時退回 macOS 通知。
 
 ## 設定:`monitask-center --config`
@@ -71,7 +71,7 @@ monitask-center install          # 一次完成其餘設定
 |------|------|
 | `monitask-center install` | 首次安裝 / 修復(見上) |
 | `monitask-center uninstall` | 移除排程與舊版殘留 job |
-| `monitask-center status` | 唯讀狀態：工作日、檢查時段、下次檢查、午休、休假日、排程、Accessibility、Monitask、上次檢查 |
+| `monitask-center status` | 唯讀狀態：工作日、檢查時段、下次檢查、午休、休假日、排程、選用的自動操作權限、Monitask、上次檢查 |
 | `monitask-center plan` | 今天會不會檢查、哪些整點、下次時間(不接觸 Monitask) |
 | `monitask-center check` | 立即執行一次檢查(仍遵守時段 / 午休 / 工作日規則，必要時會通知) |
 | `monitask-center dump-windows` | 印出 Monitask 視窗與按鈕結構(診斷用) |
@@ -108,7 +108,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | 路徑 | 角色 |
 |------|------|
 | `TODO.md` | 待辦與建議事項 |
-| `monitask.py` | 狀態引擎(pyobjc / AX)，含 `set_playing()` 按播放/暫停。子命令：`check` / `status` / `dump-windows`；`read_state()` 回傳 `timing` / `paused` / `hidden` / `unknown` / `not-running` |
+| `monitask.py` | 狀態引擎(本機 Period 檔案；按鈕操作使用 AX)，含 `set_playing()` 按播放/暫停。子命令：`check` / `status` / `dump-windows`；`read_state()` 回傳 `timing` / `paused` / `unknown` / `not-running` |
 | `run.sh` | launchd 進入點：設定 `PYTHONPATH`(`src`、`pylibs`)、載入 `.env`，再用 bundle 內 python 跑 `monitask.py` |
 | `MonitaskCenter.app` | 內含 python 副本；**AX 授權對象**(TCC 身分 `com.dannylin.monitask-center`)，勿刪 |
 | `pyfix/sitecustomize.py` | 補 `platform.mac_ver()`(僅 pip 下載 wheel 時用到) |
@@ -141,7 +141,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | 事件 | 通知 |
 |------|------|
 | Monitask 已暫停 / 沒有執行(工作日、非午休) | 提醒 |
-| 無法讀取 Monitask 狀態(Accessibility 未授權等) | 警告 |
+| 無法讀取 Monitask 狀態(Period 檔案或時間戳記異常) | 警告 |
 | 政府行事曆無法取得(fail-open) | 警告，每天最多一次 |
 | 計時中 / 視窗隱藏 / 午休 / 放假 / 休假 / 時段外 | 不通知，只寫日誌 |
 
@@ -149,6 +149,6 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 
 ## 維護注意
 
-- **別移除已授權的 AX 項目** `MonitaskCenter.app`——否則狀態讀取失效，每次檢查都會回報 `unknown`。launchd 一律經 `run.sh` 以 `/bin/bash` 呼叫 bundle 內 python(直接 exec bundle 執行檔會被當 app 啟動而失效)。
+- **需要自動播放/暫停時保留 AX 授權** `MonitaskCenter.app`；移除授權不影響狀態讀取與提醒。launchd 一律經 `run.sh` 以 `/bin/bash` 呼叫 bundle 內 python(直接 exec bundle 執行檔會被當 app 啟動而失效)。
 - **brew 升級 `python@3.13`** 可能讓 bundle 內 python 副本連結的 framework 路徑失效：重跑 `monitask-center install` 會重建 runner 並重新簽章；重簽後可能需要重新授予 Accessibility。
 - 修改程式碼不需重新安裝(`--editable`)；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。

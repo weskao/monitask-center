@@ -1,7 +1,7 @@
-"""First-time setup: runtime, PyObjC, Telegram, Accessibility, launchd.
+"""First-time setup: runtime, PyObjC, Telegram, launchd.
 
 Port of the old setup.sh. Idempotent: a repeat run only repairs what is broken, so the
-MonitaskCenter.app identity (and its Accessibility grant) survives. Never controls Monitask.
+MonitaskCenter.app identity survives. Never controls Monitask.
 """
 
 from __future__ import annotations
@@ -16,7 +16,6 @@ from pathlib import Path
 
 from . import config, launchd, telegram
 from .i18n import t
-from .status import parse_kv, run_status
 
 BREW_FALLBACKS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
 FORMULA = "python@3.13"
@@ -25,7 +24,6 @@ FORMULA = "python@3.13"
 PIP_PACKAGES = ("pyobjc-framework-Cocoa", "pyobjc-framework-ApplicationServices",
                 "pyobjc-framework-Quartz", "telegram-kit>=0.2.0,<0.3")
 IMPORT_PROBE = "import AppKit, ApplicationServices, Foundation, Quartz, telegram_kit"
-AX_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 TOKEN_RE = telegram.TOKEN_RE
 CHAT_RE = telegram.CHAT_RE
 ENV_KEYS = telegram.ENV_KEYS
@@ -186,23 +184,6 @@ def _send_test(settings: config.Settings) -> None:
     print(t("install.tg.test_sent"))
 
 
-def _trusted() -> bool:
-    _, out = run_status()
-    print(out.rstrip())
-    return parse_kv(out).get("accessibility_trusted") == "True"
-
-
-def check_accessibility(*, input_fn, confirm) -> None:
-    if _trusted():
-        return print(t("install.ax.ok"))
-    print("\n" + t("install.ax.needed"))
-    if confirm(t("install.ax.open_ask")):
-        _run(["open", AX_PANE])
-    input_fn(t("install.ax.press_enter"))
-    if not _trusted():
-        raise InstallError(t("install.err.accessibility"))
-
-
 def run_install(settings: config.Settings, *, input_fn=input, getpass_fn=getpass.getpass,
                 confirm=None) -> int:
     """0 on success; non-zero (message on stderr) on any failure, before launchd when it is a prerequisite."""
@@ -220,8 +201,6 @@ def run_install(settings: config.Settings, *, input_fn=input, getpass_fn=getpass
         prepare_runtime(p)
         _say("install.step.telegram")
         configure_telegram(p, settings, getpass_fn=getpass_fn, input_fn=input_fn, confirm=confirm)
-        _say("install.step.accessibility")
-        check_accessibility(input_fn=input_fn, confirm=confirm)
         _say("install.step.launchd")
         try:
             launchd.install(settings)
