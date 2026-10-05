@@ -189,6 +189,11 @@ def test_non_tty_output_has_no_escape_bytes():
     assert t("tui.title") in output and "workday: yes" in output
 
 
+def test_config_menu_shows_the_installed_version():
+    _, output = numbered("q\n")
+    assert "v1.0.0" in output
+
+
 def test_tty_with_no_color_redraws_but_never_paints(monkeypatch):
     monkeypatch.setenv("NO_COLOR", "1")
     _, output = run_tui(monkeypatch, ["down", "right", "quit"])

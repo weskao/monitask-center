@@ -17,10 +17,11 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import IO
 
-from .. import config, i18n, launchd, telegram
+from .. import __version__, config, i18n, launchd, telegram
 from ..i18n import t
 from . import keyreader, logo, present
 
@@ -334,6 +335,13 @@ def _style(state: State, out: IO[str], numbered: bool) -> present.Style:
     return present.Style(not numbered and present.color_enabled(out), state.pointer)
 
 
+def _app_version() -> str:
+    try:
+        return version("monitask-center")
+    except PackageNotFoundError:
+        return __version__
+
+
 def _main_lines(state: State, selected: int | None, out: IO[str]) -> list[str]:
     """The settings panel; *selected* None = the numbered fallback (all rows, numbered)."""
     items = []
@@ -350,7 +358,7 @@ def _main_lines(state: State, selected: int | None, out: IO[str]) -> list[str]:
     style = _style(state, out, numbered)
     header = logo.lines(size.columns, style.color, None if numbered else size.lines)
     return present.compose(
-        t("tui.title"), items, selected,
+        f"{t('tui.title')} v{_app_version()}", items, selected,
         columns=size.columns, lines=None if numbered else size.lines,
         style=style, logo=header, tagline=t("tui.tagline") if header else "",
         hint=t("tui.hint.numbered", n=len(ROWS)) if numbered else t("tui.hint.keys"),
