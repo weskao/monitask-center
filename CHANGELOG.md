@@ -1,3 +1,13 @@
+## [1.2.0] - 2026-10-06
+
+### 🚀 Features
+
+- **update:** Offer newer releases after a command
+
+### 🐛 Bug Fixes
+
+- **version:** Read __version__ from package metadata
+- **tui:** Mention ctrl+c and autosave in key hints
 ## [1.1.0] - 2026-10-06
 
 ### 🧪 Testing
