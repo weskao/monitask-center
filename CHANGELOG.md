@@ -1,3 +1,12 @@
+## [1.1.0] - 2026-10-06
+
+### 🧪 Testing
+
+- **tui:** Follow installed version
+
+### ⚙️ Miscellaneous Tasks
+
+- Add Dependabot config (uv)
 ## [1.0.0] - 2026-10-05
 
 ### 🚀 Features
