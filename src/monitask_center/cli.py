@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import argparse
 import functools
+import json
 import os
+import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import config, i18n, install, status
+from . import __version__, config, i18n, install, status, update_check
 from .i18n import t
 
 COMMANDS = ("install", "uninstall", "status", "plan", "check", "dump-windows", "logs")
+EXEC_COMMANDS = ("check", "dump-windows", "logs")  # replace this process (or run under launchd): no update check
 
 
 def _normalize_argv(argv: list[str]) -> list[str]:
@@ -116,10 +120,86 @@ def cmd_config() -> int:
     return menu.config_menu(status_lines=lambda: status.status_lines(config.load()))
 
 
+def _update_cache_path() -> Path:
+    return config.home_dir() / "update-check.json"
+
+
+def _fetch_git_tags(_dist: str, timeout: float) -> str:
+    """The newest `vX.Y.Z` tag on origin as a release body for update_check. Uses git (and the
+    user's own credentials) because the repo is private, so the unauthenticated GitHub API 404s."""
+    cmd = ["git", "-C", str(config.PROJECT_ROOT), "ls-remote", "--tags", "--refs", "origin"]
+    try:
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=True,
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    except subprocess.SubprocessError as exc:
+        raise OSError(str(exc)) from exc  # the one error family update_check treats as "offline"
+    tags = re.findall(r"refs/tags/(v?\d+(?:\.\d+)+)$", done.stdout, re.M)
+    if not tags:
+        raise ValueError("no release tags")
+    newest = max(tags, key=lambda tag: tuple(int(n) for n in tag.lstrip("v").split(".")))
+    return json.dumps({"tag_name": newest})
+
+
+def _start_update_check(argv: list[str]) -> update_check.Started | None:
+    """Kick off the release check in the background so it overlaps the command."""
+    try:
+        if (argv[:1] and argv[0] in EXEC_COMMANDS) or not config.load().update_check:
+            return None
+        return update_check.start("monitask-center", __version__, cache_path=_update_cache_path(),
+                                  timeout=3.0, fetch=_fetch_git_tags)  # ls-remote ~1s: above the 0.8s default
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return None
+
+
+#: What "Update now" runs: pull the editable checkout, then reinstall to refresh the version metadata.
+def _upgrade(_found: update_check.UpdateAvailable) -> list[list[str]]:
+    root = str(config.PROJECT_ROOT)
+    return [["git", "-C", root, "pull", "--ff-only"], ["uv", "tool", "install", "--editable", root, "--force"]]
+
+
+_RELEASE_NOTES = "https://github.com/weskao/monitask-center/releases/tag/%s"
+
+
+def _hint_update(found: update_check.UpdateAvailable) -> str:
+    """The ``ask`` off a terminal (pipes): a one-shot hint on stderr, never a block."""
+    print(t("update.available", latest=found.latest, current=found.current), file=sys.stderr)
+    print(t("update.command"), file=sys.stderr)
+    return update_check.SKIP
+
+
+def _ask_update(found: update_check.UpdateAvailable) -> str:
+    from .tui import menu  # lazy: the TUI is only needed here
+
+    return menu.update_prompt(found, _RELEASE_NOTES % found.latest, stdin=sys.stdin, out=sys.stderr)
+
+
+def _offer_update(started: update_check.Started | None) -> None:
+    """After the command: ask (or hint) about a newer release. Never changes the exit code."""
+    if started is None:
+        return
+    from .tui.keyreader import is_interactive
+
+    started.thread.join(3.0)  # offer() itself would stop waiting after 0.8s, before ls-remote returns
+    ask = _ask_update if is_interactive(sys.stdin, sys.stderr) else _hint_update
+    answer = update_check.offer(started, ask, cache_path=_update_cache_path(), upgrade=_upgrade)
+    if answer == update_check.UPGRADE_FAILED:
+        print(t("update.failed"), file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
+    """The update check starts first and is offered last, whichever way the command exits."""
+    raw = _normalize_argv(list(sys.argv[1:] if argv is None else argv))
+    started = _start_update_check(raw)
+    try:
+        return _main(raw)
+    finally:
+        _offer_update(started)
+
+
+def _main(raw: list[str]) -> int:
     i18n.set_language(config.load().language)  # before the parser so --help is localized
     parser = build_parser()
-    args = parser.parse_args(_normalize_argv(list(sys.argv[1:] if argv is None else argv)))
+    args = parser.parse_args(raw)
     if args.config:
         return cmd_config()
     match args.command:

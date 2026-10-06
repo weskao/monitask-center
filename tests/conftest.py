@@ -1,6 +1,6 @@
 import pytest
 
-from monitask_center import config, i18n, telegram, workday
+from monitask_center import cli, config, i18n, telegram, workday
 
 # Captured before any fixture replaces them, so a test that wants to exercise the real
 # credential-store logic can restore it (see the `store` fixture in test_telegram.py).
@@ -24,6 +24,15 @@ def sandbox(tmp_path, monkeypatch):
     workday.load_calendar.cache_clear()
     i18n.set_language(i18n.DEFAULT_LANGUAGE)
     return home
+
+
+@pytest.fixture(autouse=True)
+def no_update_network(monkeypatch):
+    """cli.main starts a background release check; no test may reach the real remote."""
+    def offline(_dist, _timeout):
+        raise OSError("offline in tests")
+
+    monkeypatch.setattr(cli, "_fetch_git_tags", offline)
 
 
 @pytest.fixture(autouse=True)

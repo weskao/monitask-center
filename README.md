@@ -56,6 +56,7 @@ monitask-center install          # 一次完成其餘設定
 | 午休略過 | 開/關(預設開)；開啟時午休內不提醒，並在午休自動暫停、午休結束自動播放 |
 | 午休開始 / 午休結束 | 午休時段 `[開始, 結束)`(預設 12 / 13) |
 | 語言 | 在 `locales/` 內現有的語言間切換 |
+| 檢查更新 | 開/關(預設開)；開啟時背景查詢 GitHub 最新版本，有更新就在指令結束後詢問(見下) |
 | Telegram | 開：Telegram，失敗退回 macOS 通知；關：只用 macOS 通知 |
 | 休假日 | 子選單：新增單日(`2026-10-05`)或區間(`2026-10-05~2026-10-09`)、移除、列出 |
 | 排程狀態 | 唯讀：launchd 是否安裝、載入、與設定一致 |
@@ -91,6 +92,15 @@ make test        # uv run --group dev pytest -q
 make help        # 列出全部
 ```
 
+## 檢查更新
+
+預設開啟(`--config` 的「檢查更新」可關)。`monitask-center` 指令執行時會在背景用 `git ls-remote --tags` 查詢 origin 的最新 `vX.Y.Z` 標籤(最多每 10 分鐘一次，結果存 `~/.monitask-center/update-check.json`)，指令結束後若有更新版本：
+
+- 互動終端機：顯示選單 — 立即更新(`git pull --ff-only` 後 `uv tool install --editable . --force`)、略過(下次再問)、略過到下一版。
+- 管線或非 TTY：只在 stderr 印一行提示，不阻塞。
+
+`check`、`dump-windows`、`logs` 與 launchd 排程不做檢查。離線或查詢失敗時靜默略過。
+
 ## launchd 排程
 
 只有**一個** job：`com.monitask-center.check`，用 `StartCalendarInterval` 在每個設定的整點(分鐘 0)各一筆，經由 `run.sh` 執行。
@@ -113,7 +123,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | `MonitaskCenter.app` | 內含 python 副本；**AX 授權對象**(TCC 身分 `com.dannylin.monitask-center`)，勿刪 |
 | `pyfix/sitecustomize.py` | 補 `platform.mac_ver()`(僅 pip 下載 wheel 時用到) |
 | `pylibs/` | 安裝程式透過 pip 裝入的 PyObjC wheel(不入版控) |
-| `src/monitask_center/` | `uv tool` 指令套件(僅標準函式庫)：`cli.py` 指令入口、`config.py` 設定、`check.py` 判斷與上次檢查紀錄、`workday.py` 工作日、`launchd.py` 排程、`install.py` 安裝、`status.py` 狀態、`notify.py` 通知與日誌、`i18n.py` 多語系 |
+| `src/monitask_center/` | `uv tool` 指令套件(僅標準函式庫)：`cli.py` 指令入口、`config.py` 設定、`update_check.py` 更新檢查(與 aicp 共用同一份)、`check.py` 判斷與上次檢查紀錄、`workday.py` 工作日、`launchd.py` 排程、`install.py` 安裝、`status.py` 狀態、`notify.py` 通知與日誌、`i18n.py` 多語系 |
 | `src/monitask_center/tui/` | `--config` 選單：`menu.py`、`present.py`、`keyreader.py`、`logo.py`(兩種尺寸的標題 logo) |
 | `src/monitask_center/locales/<lang>/*.json` | 各語言文字(目前 `zh-TW`) |
 | `tests/` | pytest 測試(含 i18n 守門) |

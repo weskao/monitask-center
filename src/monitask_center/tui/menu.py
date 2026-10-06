@@ -21,7 +21,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import IO
 
-from .. import __version__, config, i18n, launchd, telegram
+from .. import __version__, config, i18n, launchd, telegram, update_check
 from ..i18n import t
 from . import keyreader, logo, present
 
@@ -48,6 +48,7 @@ ROWS = (
     Row("lunch_start", "hour", "lunch_start_hour", 0, 23),
     Row("lunch_end", "hour", "lunch_end_hour", 1, 24),
     Row("language", "language", "language"),
+    Row("update_check", "toggle", "update_check"),
     Row("telegram", "toggle", "telegram"),
     # The token is the only secret: it is NOT a Settings field, so `field` is empty and the
     # value lives in the OS credential store. `text` is the ordinary chat id in config.json.
@@ -662,6 +663,45 @@ def _numbered(state: State, stdin: IO[str], out: IO[str]) -> int:
                 state.note = ("info", t("tui.cancelled"))
         else:
             state.note = ("error", t("tui.error.choice"))
+
+# ── update prompt ────────────────────────────────────────────────────────────
+
+# Rows top to bottom: the answers update_check.offer acts on.
+_UPDATE_ANSWERS = (update_check.UPDATE_NOW, update_check.SKIP, update_check.SKIP_VERSION)
+
+
+def _update_lines(found: update_check.UpdateAvailable, notes_url: str, selected: int,
+                  out: IO[str], style: present.Style) -> list[str]:
+    """The update prompt in the --config panel look: amber frame, pointer row, teal detail."""
+    choices = (("update.now", "update.now_detail"), ("update.skip", "update.skip_detail"),
+               ("update.skip_version", "update.skip_version_detail"))
+    items = [(f"{i}) {t(name)}", t(detail), "value") for i, (name, detail) in enumerate(choices, 1)]
+    return present.compose(
+        t("update.available", latest=found.latest, current=found.current), items, selected,
+        columns=_terminal_size(out).columns, lines=None, style=style,
+        hint=t("update.keys"), help_text=t("update.notes", url=notes_url),
+    )
+
+
+def update_prompt(found: update_check.UpdateAvailable, notes_url: str, *,
+                  stdin: IO[str], out: IO[str]) -> str:
+    """The ``ask`` callback for update_check.offer: returns UPDATE_NOW / SKIP / SKIP_VERSION and
+    does nothing else. q or EOF is SKIP."""
+    style = present.Style(present.color_enabled(out), present.pointer(os.environ, out))
+    selected = 0
+    screen = _Screen(out)
+    with keyreader.key_session(stdin):
+        screen.draw(_update_lines(found, notes_url, selected, out, style))
+        while True:
+            key = keyreader.read_key(stdin)
+            if key in ("quit", "esc"):
+                return update_check.SKIP
+            if key in ("enter", "space"):
+                return _UPDATE_ANSWERS[selected]
+            if key not in ("up", "down"):
+                continue
+            selected = (selected + (1 if key == "down" else -1)) % len(_UPDATE_ANSWERS)
+            screen.draw(_update_lines(found, notes_url, selected, out, style))
 
 
 def config_menu(stdin: IO[str] | None = None, stdout: IO[str] | None = None,

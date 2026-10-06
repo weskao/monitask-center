@@ -504,13 +504,13 @@ def test_logo_panel_never_overflows_in_any_size(monkeypatch, columns, lines, col
 
 
 def test_the_logo_shows_at_80x26_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):
-    # 12 setting rows: logo + both status lines now needs 26 rows, not 24.
-    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 26, False)[0]]
+    # 13 setting rows: logo + both status lines now needs 27 rows.
+    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 27, False)[0]]
     assert " " * logo.indent(80, logo.SMALL) + logo.SMALL[0] in plain  # the 3-row tier keeps both status lines
     assert t("tui.tagline") not in "\n".join(plain)
     assert any("monitask: timing" in line for line in plain)
     assert any("last check 10:00" in line for line in plain)
-    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 30, False)[0]]
+    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 31, False)[0]]
     assert any(t("tui.tagline") in line for line in big)
     assert sum(1 for line in big if any(k in line for k in ("monitask: t", "last check", "next check",
                                                               "workday: yes"))) >= 3
@@ -546,9 +546,9 @@ def test_interactive_surface_keeps_colour_and_no_color_still_wins(monkeypatch):
 
 
 @pytest.mark.parametrize("columns,lines,logo_shown", [
-    # 12 setting rows now, so the status block needs 22 rows and the logo 24. Notes drop
-    # before rows (present.compose), so below 22 the status line is what goes, not a row.
-    (63, 22, False), (63, 24, True), (46, 22, False), (46, 24, True), (45, 22, False), (45, 24, False),
+    # 13 setting rows now, so the status block needs 23 rows and the logo 25. Notes drop
+    # before rows (present.compose), so below 23 the status line is what goes, not a row.
+    (63, 23, False), (63, 25, True), (46, 23, False), (46, 25, True), (45, 23, False), (45, 25, False),
 ])
 def test_monitask_status_line_outranks_the_logo_on_short_terminals(monkeypatch, columns, lines, logo_shown):
     for panel in _panel(monkeypatch, columns, lines, False):

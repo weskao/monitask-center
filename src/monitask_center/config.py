@@ -47,6 +47,7 @@ class Settings:
     lunch_start_hour: int = 12
     lunch_end_hour: int = 13         # exclusive: a check at this hour is a normal one
     telegram: bool = True            # False = macOS notifications only
+    update_check: bool = True        # background check for a newer release, offered after a command
     telegram_chat_id: str = ""       # an identifier, not a secret: stored here in plain JSON.
                                      # The bot token is NOT a field -- it lives in the OS
                                      # credential store, see monitask_center.telegram
