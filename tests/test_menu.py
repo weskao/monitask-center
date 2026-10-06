@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 from collections import deque
+from importlib.metadata import version
 
 import pytest
 
@@ -191,7 +192,7 @@ def test_non_tty_output_has_no_escape_bytes():
 
 def test_config_menu_shows_the_installed_version():
     _, output = numbered("q\n")
-    assert "v1.0.0" in output
+    assert f"v{version('monitask-center')}" in output
 
 
 def test_tty_with_no_color_redraws_but_never_paints(monkeypatch):
