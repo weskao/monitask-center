@@ -112,6 +112,9 @@ def prepare_runtime(p: Paths) -> None:
         if not os.access(python, os.X_OK):
             raise InstallError(t("install.err.python_missing", path=python))
     # Keep an unchanged bundle identity so repeat installs retain Accessibility approval.
+    # Downloaded checkouts can quarantine this locally signed bundle; clear only its
+    # download flag before any runner probe, leaving Gatekeeper enabled system-wide.
+    _check_run(["/usr/bin/xattr", "-dr", "com.apple.quarantine", str(p.app)])
     wanted = _version(python)
     if wanted is None or _version(p.python_runner) != wanted:
         p.python_runner.parent.mkdir(parents=True, exist_ok=True)

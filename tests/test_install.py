@@ -3,6 +3,7 @@
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -49,6 +50,8 @@ class FakeSystem:
             self.python.chmod(0o755)
         elif name == "codesign":
             self.calls.append("codesign")
+        elif name == "xattr":
+            self.calls.append("xattr")
         elif name == "open":
             self.calls.append("open")
         elif name == "launchctl" and args[0] == "bootstrap":
@@ -135,6 +138,35 @@ def test_repeat_install_only_reloads_launchd(system):
     assert run() == 0
     assert (system.count("brew"), system.count("pip"), system.count("codesign")) == (1, 1, 1)
     assert system.count("loaded") == 2
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS quarantine attributes")
+def test_runtime_clears_bundle_quarantine_before_probing_without_resigning(tmp_path, monkeypatch):
+    p = install.Paths()
+    p.python_runner.parent.mkdir(parents=True)
+    info = p.app / "Contents/Info.plist"
+    info.write_text("<plist/>")
+    p.python_runner.write_text(PYTHON_VERSION)
+    targets = (p.app, info, p.python_runner)
+    for path in targets:
+        subprocess.run(["/usr/bin/xattr", "-w", "com.apple.quarantine",
+                        "0087;00000000;TestDownload;", str(path)], check=True)
+
+    monkeypatch.setattr(install, "_find_brew", lambda: "brew")
+    monkeypatch.setattr(install, "_brew_python", lambda brew: Path(sys.executable))
+    monkeypatch.setattr(install, "_probe_imports", lambda paths: True)
+
+    def version(binary):
+        for path in targets:
+            attrs = subprocess.run(["/usr/bin/xattr", str(path)], capture_output=True,
+                                   text=True, check=True).stdout.splitlines()
+            assert "com.apple.quarantine" not in attrs
+        return PYTHON_VERSION
+
+    monkeypatch.setattr(install, "_version", version)
+    install.prepare_runtime(p)
+    install.prepare_runtime(p)  # absent attributes are harmless on repeat installs
+    assert p.python_runner.read_text() == PYTHON_VERSION
 
 
 @pytest.mark.parametrize("broken", ["dyld: cannot load libpython", "Python 3.12.0"])
