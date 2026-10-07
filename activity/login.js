@@ -31,6 +31,7 @@ const { PROFILE_DIR, reportUrl, taipeiParts, parseActivity, isLoginPage } = requ
     await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
     await page.waitForFunction(
       () => /^\s*\d+(?:\.\d+)?\s*%\s*$/m.test(document.body.innerText),
+      null,
       { timeout: 20000 },
     ).catch(() => {});
     let text = '';

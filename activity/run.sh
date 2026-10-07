@@ -7,6 +7,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # node：優先用 nvm 的 v22，退回 PATH。
 NODE="$HOME/.nvm/versions/node/v22.23.1/bin/node"
+[ -x "$NODE" ] || NODE="/opt/homebrew/bin/node"
+[ -x "$NODE" ] || NODE="/usr/local/bin/node"
 [ -x "$NODE" ] || NODE="$(command -v node)"
 [ -x "$NODE" ] || { echo "找不到 node"; exit 1; }
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# install.sh — 活動率監控的 launchd job（每整點/半點觸發，fetch 自行判斷工作時窗）。
+# install.sh — 活動率監控的 launchd job（每整點觸發，fetch 沿用主程式的設定）。
 #   ./install.sh install | uninstall | reload | status
 set -euo pipefail
 
@@ -41,7 +41,6 @@ gen_plist() {
   <key>StartCalendarInterval</key>
   <array>
     <dict><key>Minute</key><integer>0</integer></dict>
-    <dict><key>Minute</key><integer>30</integer></dict>
   </array>
   <key>StandardOutPath</key><string>$LOGDIR/activity.out</string>
   <key>StandardErrorPath</key><string>$LOGDIR/activity.err</string>

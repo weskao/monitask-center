@@ -1,11 +1,11 @@
 'use strict';
-// 共用：台北時間、班表判斷、工作時窗、report URL、活動率解析。
+// 共用：台北時間、工作時窗、report URL、活動率解析。
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const HERE = __dirname;
 const CONFIG = JSON.parse(fs.readFileSync(path.join(HERE, 'config.json'), 'utf8'));
-const SCHEDULE_FILE = path.join(HERE, '..', 'schedule.json');
 const PROFILE_DIR = path.join(HERE, 'profile');
 
 function taipeiParts() {
@@ -21,33 +21,26 @@ function taipeiParts() {
 
 function isoOf(y, m, d) { return `${y}-${m}-${d}`; }
 
-function prevIso(iso) {
-  const dt = new Date(iso + 'T12:00:00Z');
-  dt.setUTCDate(dt.getUTCDate() - 1);
-  return dt.toISOString().slice(0, 10);
-}
-
-function loadSchedule() {
-  try {
-    const data = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf8'));
-    return data.days || data || {};
-  } catch (e) { return {}; }
-}
-
-function shiftFor(iso) { return loadSchedule()[iso] || 'unknown'; }
-
 // 目前是否在「該通知活動率」的工作時窗；並回報要抓哪一天的 report。
 function workWindow() {
-  const { year, month, day, hour, minute } = taipeiParts();
+  const { year, month, day, hour } = taipeiParts();
   const iso = isoOf(year, month, day);
-  const mins = (+hour) * 60 + (+minute);
-  const reportDate = `${month}/${day}/${year}`; // 一律抓當前台北日期的 report
-  const s = shiftFor(iso);
-  if (s === 'early' && mins >= 600 && mins <= 1200) return { ok: true, shift: 'early', iso, reportDate };
-  if (s === 'late' && mins >= 1020) return { ok: true, shift: 'late', iso, reportDate };
-  // 晚班跨午夜：00:00–01:00 屬前一天的晚班
-  if (mins <= 60 && shiftFor(prevIso(iso)) === 'late') return { ok: true, shift: 'late-tail', iso, reportDate };
-  return { ok: false, shift: s, iso, reportDate };
+  const root = path.join(HERE, '..');
+  // Reuse the timer checker's settings and holiday calendar, not a second schedule.
+  const script = `import json, sys
+from datetime import date
+from monitask_center import config, workday
+s = config.load()
+h = int(sys.argv[2])
+ok = s.telegram and h in s.check_hours() and not s.is_lunch(h)
+reason = "outside"
+if ok:
+    ok, reason = workday.peek_status(date.fromisoformat(sys.argv[1]), s)
+print(json.dumps({"ok": ok, "shift": reason}))`;
+  const result = execFileSync(path.join(root, 'MonitaskCenter.app/Contents/MacOS/python-runner'),
+    ['-c', script, iso, hour], { encoding: 'utf8', timeout: 15000,
+      env: { ...process.env, PYTHONPATH: `${path.join(root, 'src')}:${path.join(root, 'pylibs')}` } });
+  return { ...JSON.parse(result), iso, reportDate: `${month}/${day}/${year}` };
 }
 
 function reportUrl(reportDate) {
@@ -72,6 +65,6 @@ function isLoginPage(url, text) {
 }
 
 module.exports = {
-  CONFIG, PROFILE_DIR, taipeiParts, shiftFor, workWindow, reportUrl,
+  CONFIG, PROFILE_DIR, taipeiParts, workWindow, reportUrl,
   parseActivity, isLoginPage,
 };

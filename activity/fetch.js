@@ -1,8 +1,8 @@
 'use strict';
-// 無頭抓 report 頁的今日活動率，工作時窗內每半小時發群組。launchd 進入點：run.sh fetch。
+// 無頭抓 report 頁的今日活動率，工作時窗內每小時通知。launchd 進入點：run.sh fetch。
 // 參數：force = 略過工作時窗閘門（測試用）。
 const { chromium } = require('playwright');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
 const { PROFILE_DIR, workWindow, reportUrl, parseActivity, isLoginPage } = require('./lib');
@@ -17,11 +17,16 @@ function host() {
 }
 
 function notify(msg) {
-  try {
-    execFileSync('/bin/bash', [TG_SEND, 'send', `${msg}\n🖥️ ${host()}`],
-      { cwd: REPO_DIR, stdio: 'ignore', timeout: 45000 });
+  const result = spawnSync('/bin/bash', [TG_SEND, 'send', `${msg}\n🖥️ ${host()}`],
+    { cwd: REPO_DIR, encoding: 'utf8', timeout: 45000 });
+  const receipt = (result.stderr || '').match(/tg-send: (?:sendMessage|sendRichMessage) OK message_id=\d+/);
+  if (result.status === 0 && receipt) {
+    log(receipt[0]);
     return true;
-  } catch (e) { console.log('tg-send 失敗：', e.message); return false; }
+  }
+  log('tg-send 失敗或未回傳送達確認');
+  process.exitCode = 1;
+  return false;
 }
 
 function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
@@ -42,18 +47,21 @@ function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
     // 等今日活動 % 出現（最多 20s）
     await page.waitForFunction(
       () => /^\s*\d+(?:\.\d+)?\s*%\s*$/m.test(document.body.innerText),
+      null,
       { timeout: 20000 },
     ).catch(() => {});
 
     const text = await page.evaluate(() => document.body.innerText);
     if (isLoginPage(page.url(), text)) {
       log('session 過期');
-      notify('⚠️ Monitask 活動率抓取失敗：登入過期，請在電腦跑 `~/monitask-center/activity/run.sh login` 重登一次。');
+      notify(`⚠️ Monitask 活動率抓取失敗：登入過期，請執行 bash "${path.join(__dirname, 'run.sh')}" login 重登。`);
+      process.exitCode = 1;
       return;
     }
     const a = parseActivity(text);
     if (!a.daily) {
       log('解析不到活動率'); notify('⚠️ Monitask 活動率頁解析不到數字（版面可能改了）。');
+      process.exitCode = 1;
       return;
     }
     const { hour, minute } = require('./lib').taipeiParts();
@@ -68,4 +76,4 @@ function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
   } finally {
     await ctx.close();
   }
-})();
+})().catch((error) => { log(`抓取失敗：${error.name}`); process.exitCode = 1; });
