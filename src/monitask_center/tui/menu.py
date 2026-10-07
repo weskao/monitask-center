@@ -393,6 +393,8 @@ def _vacation_lines(state: State, selected: int | None, out: IO[str],
         columns=size.columns, lines=None if numbered else size.lines,
         style=_style(state, out, numbered),
         hint=hint, message=message, help_text=help_text,
+        extra=[str(config.config_path().resolve())],
+        extra_title=t("tui.vacation.file"),
     )
 
 

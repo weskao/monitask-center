@@ -672,3 +672,11 @@ def test_numbered_fallback_never_shows_a_pointer(monkeypatch):
     monkeypatch.setenv("MONITASK_CENTER_POINTER", "emoji")
     _, output = numbered("q\n", status)
     assert present.POINT_EMOJI not in output and "\n> " not in output
+
+
+@pytest.mark.parametrize("selected", [None, 0])
+def test_vacation_menu_shows_absolute_storage_path(monkeypatch, selected):
+    monkeypatch.setenv("MONITASK_CENTER_HOME", "relative-settings")
+    monkeypatch.setattr(menu, "_terminal_size", lambda _out: os.terminal_size((200, 24)))
+    output = "\n".join(menu._vacation_lines(menu.State(config.Settings()), selected, io.StringIO()))
+    assert str(config.config_path().resolve()) in output

@@ -57,6 +57,7 @@
   "tui.error.choice": "請輸入畫面上的編號",
   "tui.error.number": "請輸入 {low}–{high} 的整數",
   "tui.vacation.title": "個人假期",
+  "tui.vacation.file": "假期儲存檔案",
   "tui.vacation.add": "+ 新增日期或區間",
   "tui.vacation.prompt": "日期或區間:",
   "tui.vacation.added": "已新增 {count} 天",
