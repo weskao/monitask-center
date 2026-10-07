@@ -1,3 +1,12 @@
+## [1.3.0] - 2026-10-07
+
+### 🚀 Features
+
+- Show vacation storage path
+
+### 🐛 Bug Fixes
+
+- **install:** Clear bundle quarantine before probes
 ## [1.2.0] - 2026-10-06
 
 ### 🚀 Features
