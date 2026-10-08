@@ -43,6 +43,7 @@ class Settings:
     start_hour: int = 10
     end_hour: int = 18
     interval_hours: int = 1
+    auto_play_pause: bool = True     # False = never press Play/Pause in Monitask; notify only
     lunch_skip: bool = True          # checks inside the lunch window stay silent
     lunch_start_hour: int = 12
     lunch_end_hour: int = 13         # exclusive: a check at this hour is a normal one

@@ -24,11 +24,11 @@ def decide(hour: int, settings: config.Settings, workday: tuple[bool, str], stat
     if not is_workday:
         return "skip_vacation" if reason == "vacation" else "skip_holiday"
     if settings.is_lunch(hour):
-        return "pause" if state in QUIET_STATES else "skip_lunch"
+        return "pause" if state in QUIET_STATES and settings.auto_play_pause else "skip_lunch"
     if state in QUIET_STATES:
         return "ok"
     if state in ("paused", "not-running"):
-        return "play" if hour in settings.play_hours() else "remind"
+        return "play" if settings.auto_play_pause and hour in settings.play_hours() else "remind"
     return "warn_unknown"
 
 

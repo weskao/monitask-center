@@ -100,3 +100,11 @@ def test_lunch_pause_is_off_when_lunch_skip_is_off():
 
 def test_unknown_still_warns_at_session_start():
     assert decide(10, "unknown") == "warn_unknown"
+
+
+def test_auto_play_pause_off_only_notifies():
+    s = Settings(auto_play_pause=False)
+    assert Settings().auto_play_pause is True
+    assert decide(10, "paused", s) == "remind"
+    assert decide(13, "not-running", s) == "remind"
+    assert decide(12, "timing", s) == "skip_lunch"

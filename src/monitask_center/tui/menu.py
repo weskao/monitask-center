@@ -44,6 +44,7 @@ ROWS = (
     Row("start", "hour", "start_hour", 0, 22),
     Row("end", "hour", "end_hour", 1, 23),
     Row("interval", "interval", "interval_hours"),
+    Row("auto_play_pause", "toggle", "auto_play_pause"),
     Row("lunch_skip", "toggle", "lunch_skip"),
     Row("lunch_start", "hour", "lunch_start_hour", 0, 23),
     Row("lunch_end", "hour", "lunch_end_hour", 1, 24),
