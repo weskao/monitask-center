@@ -1,3 +1,13 @@
+## [1.4.0] - 2026-10-08
+
+### 🚀 Features
+
+- **config:** Add auto play/pause toggle
+
+### 🐛 Bug Fixes
+
+- **activity:** Align reporting with shared workday settings
+- **i18n:** Clarify update skip shortcut
 ## [1.3.0] - 2026-10-07
 
 ### 🚀 Features
