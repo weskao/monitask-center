@@ -8,6 +8,6 @@
   "update.skip_version": "略過到下一版",
   "update.skip_version_detail": "有新版本推出後才會再詢問",
   "update.notes": "版本說明:{url}",
-  "update.keys": "↑↓ 選擇 · ⏎ 確認 · q 略過",
+  "update.keys": "↑↓ 選擇 · ⏎ 確認 · q/Ctrl+C 略過",
   "update.failed": "更新沒有完成 — 請在專案目錄自行執行:git pull --ff-only && uv tool install --editable . --force"
 }
