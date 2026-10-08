@@ -5,10 +5,12 @@
 #   ./run.sh fetch force  無頭抓一次並略過時窗閘門（測試用）
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-# node：優先用 nvm 的 v22，退回 PATH。
-NODE="$HOME/.nvm/versions/node/v22.23.1/bin/node"
+# 優先使用 Homebrew Node，讓 Full Disk Access 授權對應到排程實際執行的程式。
+NODE="${MONITASK_ACTIVITY_NODE:-/opt/homebrew/opt/node/bin/node}"
+[ -x "$NODE" ] || NODE="/usr/local/opt/node/bin/node"
 [ -x "$NODE" ] || NODE="/opt/homebrew/bin/node"
 [ -x "$NODE" ] || NODE="/usr/local/bin/node"
+[ -x "$NODE" ] || NODE="$HOME/.nvm/versions/node/v22.23.1/bin/node"
 [ -x "$NODE" ] || NODE="$(command -v node)"
 [ -x "$NODE" ] || { echo "找不到 node"; exit 1; }
 

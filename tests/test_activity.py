@@ -2,6 +2,7 @@
 
 import json
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,62 @@ import pytest
 from monitask_center import config
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("existing,install_fails", [(True, False), (False, False), (False, True)])
+def test_activity_install_prepares_node_before_loading_job(tmp_path, existing, install_fails):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    node = tmp_path / "Cellar/node/test-version/bin/node"
+    node.parent.mkdir(parents=True)
+    if existing:
+        node.write_text("#!/bin/sh\necho v22.0.0\n")
+        node.chmod(0o755)
+    scripts = {
+        "uname": "#!/bin/sh\necho Darwin\n",
+        "brew": '''#!/bin/bash
+case "$1 $2" in
+  "list --versions") [ -x "$TEST_NODE" ] ;;
+  "install node")
+    [ "$TEST_INSTALL_FAILS" = False ] || exit 1
+    printf '#!/bin/sh\\necho v22.0.0\\n' > "$TEST_NODE"
+    chmod +x "$TEST_NODE"
+    echo installed >> "$TEST_LOG" ;;
+  "--prefix node") dirname "$(dirname "$TEST_NODE")" ;;
+  *) exit 2 ;;
+esac
+''',
+        "launchctl": '#!/bin/sh\necho "$*" >> "$TEST_LOG"\n',
+    }
+    for name, body in scripts.items():
+        path = tools / name
+        path.write_text(body)
+        path.chmod(0o755)
+    log = tmp_path / "commands.log"
+    result = subprocess.run(["/bin/bash", str(ROOT / "activity/install.sh"), "install"],
+                            env={**os.environ, "HOME": str(tmp_path),
+                                 "PATH": f"{tools}:/usr/bin:/bin", "TEST_NODE": str(node),
+                                 "TEST_INSTALL_FAILS": str(install_fails), "TEST_LOG": str(log)},
+                            capture_output=True, text=True)
+    plist = tmp_path / "Library/LaunchAgents/com.monitask-center.activity.plist"
+    if install_fails:
+        assert result.returncode != 0
+        assert not plist.exists() and not log.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        spec = plistlib.loads(plist.read_bytes())
+        assert spec["EnvironmentVariables"]["MONITASK_ACTIVITY_NODE"] == str(node)
+        assert str(node.resolve()) in result.stdout and "完整磁碟存取權" in result.stdout
+        assert "bootstrap" in log.read_text()
+        assert ("installed" in log.read_text()) is (not existing)
+        runner = tmp_path / "activity/run.sh"
+        runner.parent.mkdir()
+        shutil.copy(ROOT / "activity/run.sh", runner)
+        fetched = subprocess.run(["/bin/bash", str(runner), "fetch"],
+                                 env={**os.environ, "HOME": str(tmp_path),
+                                      "MONITASK_ACTIVITY_NODE": str(node)},
+                                 capture_output=True, text=True)
+        assert fetched.returncode == 0 and fetched.stdout.strip() == "v22.0.0"
 
 
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("node"),

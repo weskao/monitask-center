@@ -38,6 +38,8 @@ monitask-center install          # 一次完成其餘設定
 
 `monitask-center install` 會依序：確認檔案 → 準備執行環境 → (選用)設定 Telegram → 載入 launchd job → 最終驗證。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
 
+活動率通知使用獨立的 Node.js 排程。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會輸出實際 Node 執行檔路徑，請將該路徑加入「系統設定 → 隱私權與安全性 → 完整磁碟存取權」。macOS 不允許安裝程式自行授予此權限。Node.js 更新後若背景工作再次出現 `EPERM`，請重新加入目前輸出的路徑。
+
 - **執行環境全自動**：缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；`MonitaskCenter.app` 內的 python runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`；未授權時動作會回報失敗並通知，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。
 - **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入專案目錄 `.env`(權限 600，已被 `.gitignore` 排除，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。Telegram 關閉或傳送失敗時退回 macOS 通知。
