@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from monitask_center.i18n import t as _t
+
 from monitask_center.workday import workday_status as REAL_WORKDAY_STATUS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -412,3 +414,90 @@ def test_cmd_check_locked_screen_never_presses(routed):
     routed.world.session = {"kCGSSessionOnConsoleKey": True, "CGSSessionScreenIsLocked": True}
     routed.cmd_check()
     assert routed.presses == [] and routed.sent == []
+
+
+@pytest.fixture
+def overtime(routed, monkeypatch):
+    """cmd_overtime with the dialog and the 30-minute wait replaced: answers are consumed in order."""
+    answers, waits = [], []
+    monkeypatch.setattr(routed, "ask_overtime", lambda: answers.pop(0))
+    monkeypatch.setattr(routed.time, "sleep", waits.append)
+    routed.answers, routed.waits = answers, waits
+    return routed
+
+
+def test_overtime_timing_and_no_answer_pauses(overtime):
+    overtime.answers.append("")
+    assert overtime.cmd_overtime() == 0
+    assert overtime.presses == [False] and overtime.waits == []
+    assert len(overtime.sent) == 2  # the notice, then the pause result
+
+
+def test_overtime_stop_pauses(overtime):
+    overtime.answers.append("stop")
+    overtime.cmd_overtime()
+    assert overtime.presses == [False]
+
+
+def test_overtime_continue_asks_again_after_30_minutes_then_pauses(overtime):
+    overtime.answers += ["continue", ""]
+    overtime.cmd_overtime()
+    assert overtime.waits == [1800] and overtime.presses == [False]
+    assert len(overtime.sent) == 2  # one notice only, not one per round
+
+
+@pytest.mark.parametrize("state", ["paused", "not-running", "unknown"])
+def test_overtime_not_timing_is_silent(overtime, state):
+    overtime.world.state = state
+    overtime.cmd_overtime()
+    assert overtime.presses == [] and overtime.sent == []
+
+
+def test_overtime_stops_asking_when_paused_by_hand_during_the_wait(overtime):
+    overtime.answers += ["continue"]
+    states = iter(["timing", "paused"])
+    overtime.read_state = lambda: next(states)
+    overtime.cmd_overtime()
+    assert overtime.presses == []
+
+
+def test_overtime_pause_failure_is_reported(overtime):
+    overtime.world.press_ok = False
+    overtime.answers.append("")
+    overtime.cmd_overtime()
+    assert overtime.presses == [False] and overtime.sent[-1][0] == _t("overtime.pause_failed", why=_t("overtime.why_timeout"))
+
+
+@pytest.mark.parametrize("setup", ["disabled", "holiday", "locked"])
+def test_overtime_skips_without_touching_monitask(overtime, setup):
+    from monitask_center import config
+    if setup == "disabled":
+        config.save(config.Settings(overtime_prompt=False))
+    elif setup == "holiday":
+        overtime.world.wd = (False, "holiday:weekend")
+    else:
+        overtime.world.session = {"kCGSSessionOnConsoleKey": True, "CGSSessionScreenIsLocked": True}
+    assert overtime.cmd_overtime() == 0
+    assert overtime.sent == [] and overtime.reads == [] and overtime.presses == []
+
+
+def test_overtime_dialog_failure_still_waits_out_the_answer_window(engine, monkeypatch):
+    waits = []
+    monkeypatch.setattr(engine.subprocess, "run", lambda *a, **k: types.SimpleNamespace(
+        returncode=1, stdout="", stderr="boom"))
+    monkeypatch.setattr(engine.time, "sleep", waits.append)
+    monkeypatch.setattr(engine.notify, "log", lambda msg: None)
+    assert engine.ask_overtime() == ""
+    assert len(waits) == 1 and 0 < waits[0] <= engine.OVERTIME_ANSWER_S
+
+
+def test_overtime_dialog_maps_buttons(engine, monkeypatch):
+    from monitask_center.i18n import t
+    out = {"value": t("overtime.button_stop")}
+    monkeypatch.setattr(engine.subprocess, "run", lambda *a, **k: types.SimpleNamespace(
+        returncode=0, stdout=out["value"] + "\n", stderr=""))
+    assert engine.ask_overtime() == "stop"
+    out["value"] = t("overtime.button_continue")
+    assert engine.ask_overtime() == "continue"
+    out["value"] = ""  # gave up
+    assert engine.ask_overtime() == ""

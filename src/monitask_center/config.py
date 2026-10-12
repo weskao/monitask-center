@@ -41,6 +41,10 @@ PROJECT_ROOT = project_root(Path(__file__).resolve().parents[2], Path(sys.prefix
 RUNNER = PROJECT_ROOT / "run.sh"
 DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d")
 MAX_RANGE_DAYS = 366
+# Overtime prompt time, in minutes after midnight: 18:00 to 20:30 in half-hour steps.
+OVERTIME_EARLIEST = 18 * 60
+OVERTIME_LATEST = 20 * 60 + 30
+OVERTIME_STEP = 30
 
 
 def home_dir() -> Path:
@@ -66,6 +70,8 @@ class Settings:
     lunch_skip: bool = True          # checks inside the lunch window stay silent
     lunch_start_hour: int = 12
     lunch_end_hour: int = 13         # exclusive: a check at this hour is a normal one
+    overtime_prompt: bool = True     # workdays: still timing at overtime_minutes -> ask to stop
+    overtime_minutes: int = 18 * 60 + 30  # minutes after midnight (18:30)
     telegram: bool = True            # False = macOS notifications only
     update_check: bool = True        # background check for a newer release, offered after a command
     telegram_chat_id: str = ""       # an identifier, not a secret: stored here in plain JSON.
@@ -89,6 +95,14 @@ def max_interval(start: int, end: int) -> int:
     return max(1, end - start)
 
 
+def valid_overtime(minutes: int) -> bool:
+    return OVERTIME_EARLIEST <= minutes <= OVERTIME_LATEST and minutes % OVERTIME_STEP == 0
+
+
+def clock(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 def validate(s: Settings) -> Settings:
     """Normalize language/vacation; raise ValueError for an impossible window."""
     if not 0 <= s.start_hour < s.end_hour <= 23:
@@ -97,6 +111,8 @@ def validate(s: Settings) -> Settings:
         raise ValueError("interval")
     if not 0 <= s.lunch_start_hour < s.lunch_end_hour <= 24:
         raise ValueError("lunch")
+    if not valid_overtime(s.overtime_minutes):
+        raise ValueError("overtime")
     language = s.language if s.language in i18n.available() else i18n.DEFAULT_LANGUAGE
     days = sorted({d.isoformat() for d in map(parse_date, s.vacation) if d})
     return replace(s, language=language, vacation=tuple(days))
@@ -181,6 +197,8 @@ def load(path: Path | None = None) -> Settings:
     if not 0 <= settings.lunch_start_hour < settings.lunch_end_hour <= 24:
         settings = replace(settings, lunch_start_hour=base.lunch_start_hour,
                            lunch_end_hour=base.lunch_end_hour)
+    if not valid_overtime(settings.overtime_minutes):
+        settings = replace(settings, overtime_minutes=base.overtime_minutes)
     return validate(settings)
 
 

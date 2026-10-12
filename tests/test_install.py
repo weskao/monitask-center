@@ -113,23 +113,23 @@ def run(settings=None, **kw):
     return install.run_install(settings or Settings(), **kw)
 
 
-def test_fresh_install_bootstraps_one_job_and_keeps_env(system, tmp_path, capsys):
+def test_fresh_install_bootstraps_every_job_and_keeps_env(system, tmp_path, capsys):
     env = tmp_path / ".env"
     env.write_bytes(b"OTHER_SETTING=preserved\n")
     assert run() == 0
-    assert system.count("loaded") == 1 and launchd.plist_path("check").exists()
+    assert system.count("loaded") == len(launchd.JOBS) and launchd.plist_path("check").exists()
     assert (system.count("brew"), system.count("pip"), system.count("codesign")) == (1, 1, 1)
     assert system.runner.read_text() == PYTHON_VERSION
     assert env.read_bytes() == b"OTHER_SETTING=preserved\n"  # no tg-send.sh -> untouched
     out = capsys.readouterr().out
-    assert t("install.done") in out and "✅ 已載入的排程:1/1" in out and "❌" not in out
+    assert t("install.done") in out and "✅ 已載入的排程:2/2" in out and "❌" not in out
 
 
 def test_verify_failure_is_an_error_not_done(system, monkeypatch, capsys):
     monkeypatch.setattr(launchd, "loaded", lambda: [])
     assert run() == 1
     captured = capsys.readouterr()
-    assert "❌ 已載入的排程:0/1" in captured.out and t("install.done") not in captured.out
+    assert "❌ 已載入的排程:0/2" in captured.out and t("install.done") not in captured.out
     assert t("install.err.verify") in captured.err
 
 
@@ -137,7 +137,7 @@ def test_repeat_install_only_reloads_launchd(system):
     assert run() == 0
     assert run() == 0
     assert (system.count("brew"), system.count("pip"), system.count("codesign")) == (1, 1, 1)
-    assert system.count("loaded") == 2
+    assert system.count("loaded") == 2 * len(launchd.JOBS)
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS quarantine attributes")
@@ -256,7 +256,7 @@ def test_install_without_accessibility_never_prompts_or_opens_settings(system, c
         pytest.fail("installation requested an Accessibility grant")
 
     assert run(input_fn=unexpected_input) == 0
-    assert system.count("loaded") == 1 and launchd.plist_path("check").exists()
+    assert system.count("loaded") == len(launchd.JOBS) and launchd.plist_path("check").exists()
     assert system.count("open") == 0
     captured = capsys.readouterr()
     assert t("install.done") in captured.out and captured.err == ""

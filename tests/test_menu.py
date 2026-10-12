@@ -319,7 +319,7 @@ def test_switching_language_rerenders_immediately(monkeypatch, tmp_path):
     (locales / "en-XA" / "tui.json").write_text(json.dumps({"tui.title": "PSEUDO TITLE"}))
     monkeypatch.setattr(i18n, "LOCALES_DIR", locales)
     i18n.catalog.cache_clear()
-    rc, output = numbered("8\nq\n")
+    rc, output = numbered(f"{n('language')}\nq\n")
     assert rc == 0
     assert config.load().language == "en-XA"
     first, _, after = output.partition("PSEUDO TITLE")
@@ -504,13 +504,13 @@ def test_logo_panel_never_overflows_in_any_size(monkeypatch, columns, lines, col
 
 
 def test_the_logo_shows_at_80x26_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):
-    # 14 setting rows: logo + both status lines now needs 28 rows.
-    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 28, False)[0]]
+    # 16 setting rows: logo + both status lines now needs 30 rows.
+    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 30, False)[0]]
     assert " " * logo.indent(80, logo.SMALL) + logo.SMALL[0] in plain  # the 3-row tier keeps both status lines
     assert t("tui.tagline") not in "\n".join(plain)
     assert any("monitask: timing" in line for line in plain)
     assert any("last check 10:00" in line for line in plain)
-    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 32, False)[0]]
+    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 34, False)[0]]
     assert any(t("tui.tagline") in line for line in big)
     assert sum(1 for line in big if any(k in line for k in ("monitask: t", "last check", "next check",
                                                               "workday: yes"))) >= 3
@@ -546,9 +546,9 @@ def test_interactive_surface_keeps_colour_and_no_color_still_wins(monkeypatch):
 
 
 @pytest.mark.parametrize("columns,lines,logo_shown", [
-    # 14 setting rows now, so the status block needs 24 rows and the logo 26. Notes drop
-    # before rows (present.compose), so below 24 the status line is what goes, not a row.
-    (63, 24, False), (63, 26, True), (46, 24, False), (46, 26, True), (45, 24, False), (45, 26, False),
+    # 16 setting rows now, so the status block needs 26 rows and the logo 28. Notes drop
+    # before rows (present.compose), so below 26 the status line is what goes, not a row.
+    (63, 26, False), (63, 28, True), (46, 26, False), (46, 28, True), (45, 26, False), (45, 28, False),
 ])
 def test_monitask_status_line_outranks_the_logo_on_short_terminals(monkeypatch, columns, lines, logo_shown):
     for panel in _panel(monkeypatch, columns, lines, False):
@@ -680,3 +680,37 @@ def test_vacation_menu_shows_absolute_storage_path(monkeypatch, selected):
     monkeypatch.setattr(menu, "_terminal_size", lambda _out: os.terminal_size((200, 24)))
     output = "\n".join(menu._vacation_lines(menu.State(config.Settings()), selected, io.StringIO()))
     assert str(config.config_path().resolve()) in output
+
+
+def test_overtime_time_steps_by_half_hours_and_stops_at_both_ends():
+    row = next(r for r in menu.ROWS if r.key == "overtime_time")
+    s = config.Settings()
+    assert menu._value(menu.State(s), row) == "18:30"
+    assert config.clock(menu._step(s, row, 1).overtime_minutes) == "19:00"
+    assert config.clock(menu._step(s, row, -1).overtime_minutes) == "18:00"
+    earliest = replace_settings(overtime_minutes=config.OVERTIME_EARLIEST)
+    assert menu._step(earliest, row, -1) == earliest
+    latest = replace_settings(overtime_minutes=config.OVERTIME_LATEST)
+    assert menu._step(latest, row, 1) == latest
+
+
+def test_overtime_arrow_edit_saves_and_resyncs_the_schedule(monkeypatch):
+    synced = []
+    monkeypatch.setattr(launchd, "sync", lambda s: synced.append(s.overtime_minutes) or ("reinstalled", ["overtime"]))
+    index = [r.key for r in menu.ROWS].index("overtime_time")
+    run_tui(monkeypatch, ["down"] * index + ["right", "right", "quit"])
+    assert config.load().overtime_minutes == 19 * 60 + 30 and synced == [19 * 60 + 30]
+
+
+def test_overtime_toggle_needs_no_launchd_sync(monkeypatch):
+    monkeypatch.setattr(launchd, "sync", lambda s: pytest.fail("the job is always scheduled"))
+    _, output = numbered(f"{n('overtime_prompt')}\nq\n")
+    assert config.load().overtime_prompt is False
+
+
+def test_overtime_numbered_entry_accepts_only_valid_clock_times():
+    _, output = numbered(f"{n('overtime_time')}\n18:45\nq\n")
+    assert t("tui.error.clock", low="18:00", high="20:30") in output
+    assert config.load().overtime_minutes == 18 * 60 + 30
+    numbered(f"{n('overtime_time')}\n20:30\nq\n")
+    assert config.load().overtime_minutes == 20 * 60 + 30

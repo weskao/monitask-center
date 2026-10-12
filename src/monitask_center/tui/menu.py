@@ -5,7 +5,7 @@ the arrow-key TUI (both streams a TTY; redraws in place by walking the cursor up
 the frame it drew and erasing with ``ESC[J``) and a numbered line-based fallback
 (pipes, CI, tests) that never emits an escape byte. Every change is validated,
 saved at once (save-as-you-go) and, only when the launchd schedule depends on it
-(start/end/interval), followed by :func:`launchd.sync` - which never installs.
+(start/end/interval/overtime time), followed by :func:`launchd.sync` - which never installs.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from ..i18n import t
 from . import keyreader, logo, present
 
 DEFAULTS = config.Settings()
-SYNC_FIELDS = ("start_hour", "end_hour", "interval_hours")
+SYNC_FIELDS = ("start_hour", "end_hour", "interval_hours", "overtime_minutes")
 EDIT_MAX = 40  # typed date/range field: a paste-flood backstop, not a format check
 CARET = "▏"
 
@@ -34,7 +34,7 @@ CARET = "▏"
 @dataclass(frozen=True)
 class Row:
     key: str          # tui.row.<key> label, tui.help.<key> help
-    kind: str         # hour | interval | toggle | language | vacation | install
+    kind: str         # hour | clock | interval | toggle | language | vacation | install
     field: str = ""
     low: int = 0
     high: int = 0
@@ -48,6 +48,8 @@ ROWS = (
     Row("lunch_skip", "toggle", "lunch_skip"),
     Row("lunch_start", "hour", "lunch_start_hour", 0, 23),
     Row("lunch_end", "hour", "lunch_end_hour", 1, 24),
+    Row("overtime_prompt", "toggle", "overtime_prompt"),
+    Row("overtime_time", "clock", "overtime_minutes", config.OVERTIME_EARLIEST, config.OVERTIME_LATEST),
     Row("language", "language", "language"),
     Row("update_check", "toggle", "update_check"),
     Row("telegram", "toggle", "telegram"),
@@ -58,7 +60,7 @@ ROWS = (
     Row("vacation", "vacation", "vacation"),
     Row("install", "install"),
 )
-ADJUSTABLE = ("hour", "interval", "toggle", "language")
+ADJUSTABLE = ("hour", "clock", "interval", "toggle", "language")
 # Rows edited by typing rather than by stepping a value.
 TYPED = ("text", "secret")
 TEXT_MAX = 128  # a pasted token/chat id, not a format check (telegram_kit's own bound)
@@ -120,6 +122,8 @@ def _value(state: State, row: Row, s: config.Settings | None = None) -> str:
     v = getattr(s, row.field) if row.field else None
     if row.kind == "hour":
         return f"{v:02d}:00"
+    if row.kind == "clock":
+        return config.clock(v)
     if row.kind == "interval":
         return t("tui.value.hours", n=v)
     if row.kind == "toggle":
@@ -159,7 +163,8 @@ def _step(s: config.Settings, row: Row, direction: int) -> config.Settings:
         index = names.index(current) if current in names else -1
         return _with(s, row, names[(index + direction) % len(names)])
     low, high = _bounds(row, s)
-    return _with(s, row, min(max(current + direction, low), high))
+    step = config.OVERTIME_STEP if row.kind == "clock" else 1
+    return _with(s, row, min(max(current + direction * step, low), high))
 
 
 def _commit(state: State, new: config.Settings, done: str = "tui.saved") -> bool:
@@ -602,6 +607,18 @@ def _numbered_row(state: State, row: Row, stdin: IO[str], out: IO[str]) -> None:
             state.note = ("error", t("tui.error.no_echo"))
         else:
             _apply_typed(state, row, answer)
+    elif row.kind == "clock":
+        low, high = config.clock(row.low), config.clock(row.high)
+        answer = _ask(t("tui.prompt.value", label=t(f"tui.row.{row.key}"),
+                        current=_value(state, row), low=low, high=high), stdin, out)
+        if not answer:
+            return
+        hours, _, minutes = answer.strip().partition(":")
+        value = int(hours) * 60 + int(minutes) if hours.isdecimal() and minutes.isdecimal() else -1
+        if not config.valid_overtime(value):
+            state.note = ("error", t("tui.error.clock", low=low, high=high))
+            return
+        _commit(state, _with(state.settings, row, value))
     else:
         low, high = _bounds(row, state.settings)
         answer = _ask(t("tui.prompt.value", label=t(f"tui.row.{row.key}"),

@@ -222,6 +222,26 @@ def test_play_hours_are_start_and_lunch_end():
     assert Settings(lunch_skip=False).play_hours() == {10}
     assert Settings(start_hour=9, lunch_end_hour=14).play_hours() == {9, 14}
 
+
+@pytest.mark.parametrize("minutes,ok", [(18 * 60, True), (18 * 60 + 30, True), (20 * 60 + 30, True),
+                                         (17 * 60 + 30, False), (21 * 60, False), (18 * 60 + 15, False)])
+def test_overtime_time_is_half_hours_between_1800_and_2030(minutes, ok):
+    assert config.valid_overtime(minutes) is ok
+    if ok:
+        assert config.validate(Settings(overtime_minutes=minutes)).overtime_minutes == minutes
+    else:
+        with pytest.raises(ValueError, match="overtime"):
+            config.validate(Settings(overtime_minutes=minutes))
+
+
+def test_overtime_defaults_and_bad_stored_value_falls_back():
+    assert (Settings().overtime_prompt, config.clock(Settings().overtime_minutes)) == (True, "18:30")
+    config.config_path().parent.mkdir(parents=True, exist_ok=True)
+    config.config_path().write_text('{"overtime_minutes": 1000, "overtime_prompt": false}')
+    loaded = config.load()
+    assert loaded.overtime_minutes == 18 * 60 + 30 and loaded.overtime_prompt is False
+
+
 def test_project_root_falls_back_to_the_uv_receipt_source(tmp_path):
     package, prefix, source = tmp_path / "venv-pkg", tmp_path / "venv", tmp_path / "checkout"
     for d in (package, prefix, source):

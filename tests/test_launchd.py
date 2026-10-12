@@ -19,14 +19,19 @@ def calls(monkeypatch):
     return log
 
 
-def test_single_job_plist():
-    assert launchd.JOBS == ("check",)
+def test_job_plists():
+    assert launchd.JOBS == ("check", "overtime")
     spec = plistlib.loads(launchd.render("check", Settings()))
     assert spec["Label"] == "com.monitask-center.check"
     assert spec["ProgramArguments"][-1] == "check"
     assert [i["Hour"] for i in spec["StartCalendarInterval"]] == list(range(10, 19))
     assert all(i["Minute"] == 0 for i in spec["StartCalendarInterval"])
     assert "KeepAlive" not in spec
+    overtime = plistlib.loads(launchd.render("overtime", Settings()))
+    assert overtime["ProgramArguments"][-1] == "overtime"
+    assert overtime["StartCalendarInterval"] == [{"Hour": 18, "Minute": 30}]
+    assert plistlib.loads(launchd.render("overtime", Settings(overtime_minutes=20 * 60)))[
+        "StartCalendarInterval"] == [{"Hour": 20, "Minute": 0}]
 
 
 def test_lunch_settings_do_not_change_plist():
@@ -73,7 +78,7 @@ def test_uninstall_removes_job_and_legacy(calls):
     launchd.install(Settings())
     legacy = launchd.plist_path("watch")
     legacy.write_bytes(b"x")
-    assert launchd.uninstall() == ["check"]
+    assert launchd.uninstall() == ["check", "overtime"]
     assert not legacy.exists() and not launchd.plist_path("check").exists()
     assert not launchd.is_installed()
 
@@ -87,7 +92,7 @@ def test_bootstrap_failure_raises(monkeypatch):
     with pytest.raises(subprocess.CalledProcessError):
         launchd.install(Settings())
     assert not launchd.is_installed()  # rolled back: nothing matches the new settings while unloaded
-    assert launchd.stale_jobs(Settings()) == ["check"]
+    assert launchd.stale_jobs(Settings()) == ["check", "overtime"]
     assert launchd.sync(Settings()) == ("not_installed", [])
 
 

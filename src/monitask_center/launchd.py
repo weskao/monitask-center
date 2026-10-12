@@ -17,7 +17,7 @@ from . import config
 from .i18n import t
 
 PREFIX = "com.monitask-center"
-JOBS = ("check",)
+JOBS = ("check", "overtime")
 # Jobs from the shift-schedule era and older bundle ids; removed on install/uninstall.
 LEGACY_JOBS = ("morning", "lunch", "afternoon", "evening", "night-start", "night-stop", "watch")
 LEGACY_PREFIXES = (PREFIX, "com.dannylin.monitask-center", "com.dannylin.monitask")
@@ -44,7 +44,11 @@ def render(job: str, settings: config.Settings) -> bytes:
         "StandardErrorPath": str(out / f"launchd.{job}.err"),
         "ProcessType": "Interactive",
     }
-    spec["StartCalendarInterval"] = [{"Hour": h, "Minute": 0} for h in settings.check_hours()]
+    if job == "overtime":  # always scheduled; overtime_prompt is decided at run time
+        minutes = settings.overtime_minutes
+        spec["StartCalendarInterval"] = [{"Hour": minutes // 60, "Minute": minutes % 60}]
+    else:
+        spec["StartCalendarInterval"] = [{"Hour": h, "Minute": 0} for h in settings.check_hours()]
     return plistlib.dumps(spec)
 
 

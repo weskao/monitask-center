@@ -4,7 +4,9 @@
 Commands:
   check         hourly check (launchd): decide, then notify (remind / warn_unknown) or press
                 Play at a session start / Pause at lunch
-  status        key=value lines (accessibility_trusted, running, state, gui_session)
+  overtime      daily overtime prompt (launchd): still timing on a workday -> ask stop / keep
+                working; no answer in 15 min -> Pause; keep working -> ask again in 30 min
+  status       key=value lines (accessibility_trusted, running, state, gui_session)
   dump-windows  print window / control structure
 
 Reads state without AX; Play/Pause (set_playing) still requires AX and only runs when
@@ -42,6 +44,16 @@ LAUNCH_TIMEOUT_S = 30   # max wait after `open -a` for the Play/Pause controls t
 VERIFY_TIMEOUT_S = 15   # max wait after pressing for the state to flip
 POLL_S = 0.5
 PERIOD_MAX_AGE_S = 180  # allow two missed minute updates; calibrate after a real pause observation
+OVERTIME_ANSWER_S = 15 * 60   # no answer to the overtime prompt within this -> Pause
+OVERTIME_RECHECK_S = 30 * 60  # "keep working" -> ask again after this
+# Text goes in as argv, never spliced into the source: no AppleScript quoting to get wrong.
+OVERTIME_DIALOG = """on run argv
+activate
+set d to display dialog (item 1 of argv) buttons {item 2 of argv, item 3 of argv} \
+default button (item 3 of argv) with title "Monitask" giving up after ((item 4 of argv) as integer)
+if gave up of d then return ""
+return button returned of d
+end run"""
 
 _last_error = ""  # why the last read_state() returned "unknown"
 
@@ -172,13 +184,17 @@ def set_playing(playing: bool) -> bool:
     return False
 
 
-def press(action: str, telegram: bool) -> str:
-    """Run a play/pause decision and notify the outcome -> action, or action_failed."""
+def _try_set_playing(playing: bool) -> bool:
     try:
-        ok = set_playing(action == "play")
+        return set_playing(playing)
     except Exception as exc:  # noqa: BLE001 - a failed press must still notify, never crash the tick
         notify.log(t("check.err.exception", error=exc))
-        ok = False
+        return False
+
+
+def press(action: str, telegram: bool) -> str:
+    """Run a play/pause decision and notify the outcome -> action, or action_failed."""
+    ok = _try_set_playing(action == "play")
     if action == "play":
         message = t("check.play_ok") if ok else t("check.play_failed")
     else:
@@ -219,6 +235,63 @@ def cmd_check() -> int:
     return 0
 
 
+def ask_overtime() -> str:
+    """Show the overtime dialog -> "stop" | "continue" | "" (no answer in OVERTIME_ANSWER_S).
+
+    A dialog that cannot be shown still waits out the answer window, so the user gets the
+    time the notice promised before the timer is paused."""
+    stop, keep = t("overtime.button_stop"), t("overtime.button_continue")
+    deadline = time.monotonic() + OVERTIME_ANSWER_S
+    try:
+        r = subprocess.run(["/usr/bin/osascript", "-e", OVERTIME_DIALOG, t("overtime.dialog"),
+                            stop, keep, str(OVERTIME_ANSWER_S)],
+                           text=True, capture_output=True, timeout=OVERTIME_ANSWER_S + 30, check=False)
+        answer, failed = (r.stdout or "").strip(), r.returncode != 0
+        detail = (r.stderr or "").strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        answer, failed, detail = "", True, str(exc)
+    if failed:
+        notify.log(t("overtime.dialog_failed", error=detail))
+        time.sleep(max(0.0, deadline - time.monotonic()))
+    return {stop: "stop", keep: "continue"}.get(answer, "")
+
+
+def cmd_overtime() -> int:
+    os.environ["MONITASK_CENTER_LOG_STDOUT"] = "1"  # launchd stdout keeps its lines
+    settings = config.load()
+    i18n.set_language(settings.language)
+    if not settings.overtime_prompt:
+        notify.log(t("overtime.disabled"))
+        return 0
+    is_workday, reason = workday.workday_status(date.today(), settings)
+    if not is_workday:
+        notify.log(t("overtime.skip_day", reason=reason_text(reason)))
+        return 0
+    if not gui_session_available():
+        notify.log(t("overtime.locked"))
+        return 0
+    asked = False
+    while (state := read_state()) in check.QUIET_STATES:
+        if not asked:
+            notify.notify(t("overtime.notice", time=config.clock(settings.overtime_minutes),
+                            minutes=OVERTIME_ANSWER_S // 60), settings.telegram)
+            asked = True
+        answer = ask_overtime()
+        if answer == "continue":
+            notify.log(t("overtime.continue", minutes=OVERTIME_RECHECK_S // 60))
+            time.sleep(OVERTIME_RECHECK_S)
+            continue
+        if (state := read_state()) not in check.QUIET_STATES:  # stopped by hand meanwhile
+            break
+        why = t("overtime.why_stop" if answer == "stop" else "overtime.why_timeout")
+        notify.log(why)
+        ok = _try_set_playing(False)
+        notify.notify(t("overtime.paused" if ok else "overtime.pause_failed", why=why), settings.telegram)
+        return 0
+    notify.log(t("overtime.not_timing", state=state_text(state)))
+    return 0
+
+
 def cmd_status() -> int:
     app = running_app()
     print(f"accessibility_trusted={bool(AX.AXIsProcessTrusted())}")
@@ -252,7 +325,8 @@ def cmd_dump_windows() -> int:
     return 0
 
 
-COMMANDS = {"check": cmd_check, "status": cmd_status, "dump-windows": cmd_dump_windows}
+COMMANDS = {"check": cmd_check, "overtime": cmd_overtime, "status": cmd_status,
+            "dump-windows": cmd_dump_windows}
 
 
 def main() -> int:
