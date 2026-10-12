@@ -16,6 +16,7 @@ import signal
 import subprocess
 import sys
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -462,6 +463,23 @@ def _wait(stdin: IO[str]) -> bool:
     return False
 
 
+@contextmanager
+def _owns_screen(out: IO[str]):
+    """Hide the cursor and redraw on resize while a panel is up; restore both on exit."""
+    out.write("\x1b[?25l")
+    try:
+        previous = signal.signal(signal.SIGWINCH, _on_winch)
+    except (AttributeError, ValueError):  # no SIGWINCH / not the main thread
+        previous = None
+    try:
+        yield
+    finally:
+        if previous is not None:
+            signal.signal(signal.SIGWINCH, previous)
+        out.write("\x1b[?25h")
+        out.flush()
+
+
 def _confirm(state: State, screen: _Screen, render: Callable[[], list[str]],
              stdin: IO[str], question: str) -> bool:
     state.note = ("input", question)
@@ -519,13 +537,8 @@ def _tui(state: State, stdin: IO[str], out: IO[str]) -> int:
     def render() -> list[str]:
         return _main_lines(state, selected, out)
 
-    out.write("\x1b[?25l")  # hide the cursor while the panel owns the screen
     try:
-        previous = signal.signal(signal.SIGWINCH, _on_winch)
-    except (AttributeError, ValueError):  # no SIGWINCH / not the main thread
-        previous = None
-    try:
-        with keyreader.key_session(stdin):
+        with _owns_screen(out), keyreader.key_session(stdin):
             screen.draw(render())
             while True:
                 if _wait(stdin):
@@ -567,11 +580,6 @@ def _tui(state: State, stdin: IO[str], out: IO[str]) -> int:
                 screen.draw(render())
     except KeyboardInterrupt:
         _settle(state)  # a saved schedule change must still reach launchd
-    finally:
-        if previous is not None:
-            signal.signal(signal.SIGWINCH, previous)
-        out.write("\x1b[?25h")
-        out.flush()
     return 1 if state.failed else 0
 
 
@@ -710,9 +718,16 @@ def update_prompt(found: update_check.UpdateAvailable, notes_url: str, *,
     style = present.Style(present.color_enabled(out), present.pointer(os.environ, out))
     selected = 0
     screen = _Screen(out)
-    with keyreader.key_session(stdin):
+
+    def draw() -> None:
         screen.draw(_update_lines(found, notes_url, selected, out, style))
+
+    with _owns_screen(out), keyreader.key_session(stdin):
+        draw()
         while True:
+            if _wait(stdin):
+                draw()
+                continue
             key = keyreader.read_key(stdin)
             if key in ("quit", "esc"):
                 return update_check.SKIP
@@ -721,7 +736,7 @@ def update_prompt(found: update_check.UpdateAvailable, notes_url: str, *,
             if key not in ("up", "down"):
                 continue
             selected = (selected + (1 if key == "down" else -1)) % len(_UPDATE_ANSWERS)
-            screen.draw(_update_lines(found, notes_url, selected, out, style))
+            draw()
 
 
 def config_menu(stdin: IO[str] | None = None, stdout: IO[str] | None = None,
