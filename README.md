@@ -4,6 +4,8 @@
 
 **它做什麼：** 工作日的整點檢查 Monitask 有沒有在計時，忘了開就自動按播放(午休自動暫停、下班詢問後停止)，並用 Telegram 通知你結果；另有選用的活動率報表，定時推送今日活動率。
 
+**支援的作業系統：** 目前只支援 **macOS**(依賴 launchd、Accessibility 與 macOS 版 Monitask)；Windows / Linux 尚未支援。
+
 **快速開始：** 見[首次設定](#首次設定)。
 
 ### 設定選單 `monitask-center --config`
