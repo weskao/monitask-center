@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const { execFileSync, spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
-const { PROFILE_DIR, workWindow, reportUrl, parseActivity, isLoginPage } = require('./lib');
+const { PROFILE_DIR, workWindow, fetchActivity } = require('./lib');
 
 const TG_SEND = path.join(os.homedir(), '.claude/scripts/tg-send.sh');
 const REPO_DIR = path.join(__dirname, '..');
@@ -35,32 +35,21 @@ function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
   const w = workWindow();
   if (!w.ok && !FORCE) { log(`非工作時窗（今日=${w.shift}），略過`); return; }
 
-  const url = reportUrl(w.reportDate);
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: true,
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     viewport: { width: 1440, height: 900 },
   });
   try {
-    const page = ctx.pages()[0] || await ctx.newPage();
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-    // 等今日活動 % 出現（最多 20s）
-    await page.waitForFunction(
-      () => /^\s*\d+(?:\.\d+)?\s*%\s*$/m.test(document.body.innerText),
-      null,
-      { timeout: 20000 },
-    ).catch(() => {});
-
-    const text = await page.evaluate(() => document.body.innerText);
-    if (isLoginPage(page.url(), text)) {
-      log('session 過期');
-      notify(`⚠️ Monitask 活動率抓取失敗：登入過期，請執行 bash "${path.join(__dirname, 'run.sh')}" login 重登。`);
-      process.exitCode = 1;
-      return;
-    }
-    const a = parseActivity(text);
-    if (!a.daily) {
-      log('解析不到活動率'); notify('⚠️ Monitask 活動率頁解析不到數字（版面可能改了）。');
+    let a;
+    try {
+      a = await fetchActivity(ctx.request, w.reportDate);
+    } catch (error) {
+      const detail = error.message === '登入過期'
+        ? `登入過期，請執行 bash "${path.join(__dirname, 'run.sh')}" login 重登。`
+        : error.message;
+      log(detail);
+      notify(`⚠️ Monitask 活動率抓取失敗：${detail}`);
       process.exitCode = 1;
       return;
     }

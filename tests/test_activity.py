@@ -15,6 +15,120 @@ from monitask_center import config
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+@pytest.mark.parametrize("status,url,html,expected", [
+    (200, "/Report/TimeSpanPartial", '''
+      <style>.example { width: 99%; }</style><script>const example = '99%';</script>
+      <div>99%</div>
+      <div class="timeline__online-widget_medium-text">00H 00米</div>
+      <div class="timeline__online-widget_medium-text">67.25%</div>
+      <div class="timeline__online-widget_online-text">02H 15米</div>
+      <a class="all-screenshots-link"><i class="icon"></i><span>42 截图</span></a>
+      <span>80% 的 10 分</span>
+    ''', {"daily": "67.25", "lastHour": 80, "blocks": [80],
+          "total": "02H 15米", "shots": "42"}),
+    (200, "/Report/TimeSpanPartial",
+     '<div class="timeline__online-widget_medium-text">0.00%</div>',
+     {"daily": "0.00", "lastHour": None, "blocks": [], "total": None, "shots": None}),
+    (200, "/Report/TimeSpanPartial", '<div>99%</div>', "報表資料缺少有效的活動率"),
+    (200, "/Report/TimeSpanPartial",
+     '<div class="timeline__online-widget_medium-text">101%</div>',
+     "報表資料缺少有效的活動率"),
+    (200, "/identity/login", '<form>Log In</form>', "登入過期"),
+    (401, "/Report/TimeSpanPartial", "", "登入過期"),
+    (403, "/Report/TimeSpanPartial", "", "報表請求失敗（HTTP 403）"),
+    (200, "/Report/TimeSpanPartial", "这一天没有时间被跟踪。", "當日尚無追蹤資料"),
+    (503, "/Report/TimeSpanPartial", "", "報表請求失敗（HTTP 503）"),
+    (0, "/Report/TimeSpanPartial", "", "報表請求失敗（網路錯誤或逾時）"),
+])
+def test_activity_reads_server_report_without_rendering(status, url, html, expected):
+    script = """
+const assert = require('node:assert/strict');
+const {CONFIG, fetchActivity} = require('./activity/lib');
+const [status, path, html] = JSON.parse(process.argv[1]);
+const request = {get: async (url, options) => {
+  const target = new URL(url);
+  if (target.pathname === '/report') return {status: () => 200, ok: () => true,
+    url: () => 'https://example.com/report',
+    text: async () => '<input value="00000000-0000-0000-0000-000000000001" id="Id" type="hidden">'};
+  assert.equal(target.pathname, '/Report/TimeSpanPartial');
+  assert.equal(target.searchParams.get('id'), '00000000-0000-0000-0000-000000000001');
+  assert.equal(target.searchParams.get('startDate'), '10/07/2026');
+  assert.equal(target.searchParams.get('timeOffSet'), CONFIG.timeOffSet);
+  assert.equal(target.searchParams.get('showIdle'), 'true');
+  assert.equal(target.searchParams.get('allowRemoveTime'), 'False');
+  assert.equal(options.headers['X-Requested-With'], 'XMLHttpRequest');
+  assert.equal(options.timeout, 30000);
+  if (!status) throw new Error('request timed out');
+  return {status: () => status, ok: () => status === 200,
+          url: () => 'https://example.com' + path, text: async () => html};
+}};
+(async () => {
+  try { console.log(JSON.stringify(await fetchActivity(request, '10/07/2026'))); }
+  catch (error) { console.log(JSON.stringify(error.message)); }
+})();
+"""
+    result = subprocess.run(["node", "-e", script, json.dumps([status, url, html])],
+                            cwd=ROOT, capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == expected
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+@pytest.mark.parametrize("error,expected", [("當日尚無追蹤資料", 0), ("登入過期", 1)])
+def test_activity_login_verifies_session_without_requiring_tracked_time(error, expected):
+    script = """
+const lib = require('./activity/lib');
+lib.fetchActivity = async () => {throw new Error(process.argv[1]);};
+const page = {goto: async () => {}, url: () => 'https://example.com/report'};
+const Module = require('module');
+const load = Module._load;
+Module._load = function(name, ...args) {
+  if (name === 'playwright') return {chromium: {
+    launchPersistentContext: async () => ({pages: () => [page], close: async () => {}}),
+  }};
+  return load.call(this, name, ...args);
+};
+require('./activity/login');
+"""
+    result = subprocess.run(["node", "-e", script, error], cwd=ROOT,
+                            capture_output=True, text=True)
+    assert result.returncode == expected
+    assert ("profile 已存" in result.stdout) is (expected == 0)
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+@pytest.mark.parametrize("member_id,expected", [
+    ("", "45.5"),
+    ("00000000-0000-0000-0000-000000000001", "45.5"),
+    ("00000000-0000-0000-0000-000000000002", "報表成員與設定不一致，請確認成員 ID 與帳號權限"),
+])
+def test_activity_env_settings_select_the_requested_member(member_id, expected):
+    script = """
+const assert = require('node:assert/strict');
+const {fetchActivity} = require('./activity/lib');
+const request = {get: async (url) => {
+  const u = new URL(url);
+  assert.equal(u.searchParams.get('timeOffSet'), 'Pacific Standard Time');
+  if (u.pathname === '/report') {
+    assert.equal(u.searchParams.get('memberId'), process.env.MONITASK_ACTIVITY_MEMBER_ID || null);
+    return {status: () => 200, ok: () => true, url: () => url,
+      text: async () => '<input id="Id" value="00000000-0000-0000-0000-000000000001">'};
+  }
+  return {status: () => 200, ok: () => true, url: () => url,
+    text: async () => '<div class="timeline__online-widget_medium-text">45.5%</div>'};
+}};
+(async () => {
+  try { console.log(JSON.stringify((await fetchActivity(request, '10/07/2026')).daily)); }
+  catch (error) { console.log(JSON.stringify(error.message)); }
+})();
+"""
+    result = subprocess.run(["node", "-e", script], cwd=ROOT, capture_output=True,
+                            text=True, check=True, env={**os.environ,
+                                "MONITASK_ACTIVITY_MEMBER_ID": member_id,
+                                "MONITASK_ACTIVITY_TIMEZONE": "Pacific Standard Time"})
+    assert json.loads(result.stdout) == expected
+
+
 @pytest.mark.parametrize("existing,install_fails", [(True, False), (False, False), (False, True)])
 def test_activity_install_prepares_node_before_loading_job(tmp_path, existing, install_fails):
     tools = tmp_path / "tools"
@@ -114,15 +228,17 @@ lib.workWindow = () => ({ok: true, reportDate: '10/07/2026'});
 const child = require('child_process');
 child.execFileSync = () => 'Test Host';
 child.spawnSync = () => ({status: Number(process.argv[1]), stderr: process.argv[2]});
-const page = {
-  goto: async () => {}, waitForFunction: async () => {},
-  evaluate: async () => '65%', url: () => 'https://example.com/report',
-};
+const request = {get: async (url) => ({status: () => 200, ok: () => true,
+  url: () => url,
+  text: async () => new URL(url).pathname === '/report'
+    ? '<input id="Id" value="00000000-0000-0000-0000-000000000001">'
+    : '<div class="timeline__online-widget_medium-text">65%</div>',
+})};
 const Module = require('module');
 const load = Module._load;
 Module._load = function(name, ...args) {
   if (name === 'playwright') return {chromium: {
-    launchPersistentContext: async () => ({pages: () => [page], close: async () => {}}),
+    launchPersistentContext: async () => ({request, close: async () => {}}),
   }};
   return load.call(this, name, ...args);
 };

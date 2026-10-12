@@ -90,6 +90,12 @@ PLIST
 do_install() {
   [ -f "$RUNNER" ] || { echo "找不到 run.sh：$RUNNER"; exit 1; }
   ensure_node
+  echo "  活動率沿用登入 session，自動取得本人報表的成員 ID。"
+  echo "  個別設定：$HERE/../.env（範例：.env.example）"
+  echo "  MONITASK_ACTIVITY_TIMEZONE：Windows 時區名稱；MONITASK_ACTIVITY_MEMBER_ID：選填指定成員。"
+  echo "  首次使用／登入過期：bash \"$HERE/run.sh\" login"
+  echo "  首次使用先準備依賴：npm --prefix \"$HERE\" install"
+  echo "  安裝瀏覽器：npm --prefix \"$HERE\" exec -- playwright install chromium"
   [ -d "$HERE/profile" ] || echo "  ⚠️ 尚未登入（profile/ 不存在）。先跑 ./run.sh login。"
   cleanup_legacy
   gen_plist

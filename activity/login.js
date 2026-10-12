@@ -2,7 +2,7 @@
 // 首次登入：開「有畫面」的瀏覽器到 Monitask，由你本人手動登入（密碼你自己打）。
 // 登入成功後 session 存進 profile/，之後 fetch.js 走無頭沿用。
 const { chromium } = require('playwright');
-const { PROFILE_DIR, reportUrl, taipeiParts, parseActivity, isLoginPage } = require('./lib');
+const { PROFILE_DIR, reportUrl, taipeiParts, fetchActivity } = require('./lib');
 
 (async () => {
   const { year, month, day } = taipeiParts();
@@ -26,21 +26,22 @@ const { PROFILE_DIR, reportUrl, taipeiParts, parseActivity, isLoginPage } = requ
     if (curUrl && !/\/identity\/login/i.test(curUrl)) { ok = true; break; }
     await page.waitForTimeout(2000);
   }
-  // 第二階段：登入成功後才導到 report 抓一次驗證（此時你已打完，不會被清）。
+  // 第二階段：登入成功後直接驗證報表資料，不再等待頁面渲染。
   if (ok) {
-    await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
-    await page.waitForFunction(
-      () => /^\s*\d+(?:\.\d+)?\s*%\s*$/m.test(document.body.innerText),
-      null,
-      { timeout: 20000 },
-    ).catch(() => {});
-    let text = '';
-    try { text = await page.evaluate(() => document.body.innerText); } catch (e) {}
-    const a = parseActivity(text);
-    console.log('登入成功 ✅  解析驗證：');
-    console.log(`  今日活動=${a.daily}%  最近一小時≈${a.lastHour}%  總時=${a.total}  截圖=${a.shots}  段數=${a.blocks.length}`);
+    try {
+      const a = await fetchActivity(ctx.request, `${month}/${day}/${year}`);
+      console.log('登入成功 ✅  報表資料驗證：');
+      console.log(`  今日活動=${a.daily}%  最近一小時≈${a.lastHour}%  總時=${a.total}  截圖=${a.shots}  段數=${a.blocks.length}`);
+    } catch (error) {
+      if (error.message === '當日尚無追蹤資料') {
+        console.log('登入成功 ✅  當日尚無追蹤資料。');
+      } else {
+        console.log(`報表資料驗證失敗：${error.message}`);
+        process.exitCode = 1;
+      }
+    }
   }
   await ctx.close();
   if (!ok) { console.log('逾時未偵測到登入成功。請重跑 login 再登一次。'); process.exit(1); }
-  console.log('profile 已存，之後 fetch 走無頭。');
+  if (!process.exitCode) console.log('profile 已存，之後 fetch 直接讀取報表資料。');
 })();
