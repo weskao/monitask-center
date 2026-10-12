@@ -1,6 +1,6 @@
 import pytest
 
-from monitask_center import cli, config, i18n, telegram, workday
+from monitask_center import config, i18n, telegram, update_check, workday
 
 # Captured before any fixture replaces them, so a test that wants to exercise the real
 # credential-store logic can restore it (see the `store` fixture in test_telegram.py).
@@ -32,7 +32,7 @@ def no_update_network(monkeypatch):
     def offline(_dist, _timeout):
         raise OSError("offline in tests")
 
-    monkeypatch.setattr(cli, "_fetch_git_tags", offline)
+    monkeypatch.setattr(update_check, "fetch_github", offline)
 
 
 @pytest.fixture(autouse=True)

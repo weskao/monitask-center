@@ -13,7 +13,7 @@ from monitask_center.i18n import t as _t
 from monitask_center.workday import workday_status as REAL_WORKDAY_STATUS
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE = ROOT / "monitask.py"
+ENGINE = ROOT / "src/monitask_center/engine.py"
 
 
 class Node:
@@ -35,7 +35,7 @@ class FakeApp:
 
 @pytest.fixture
 def engine(monkeypatch):
-    """monitask.py imported against fake pyobjc modules (pyobjc is not installable in the uv env)."""
+    """engine.py imported against fake pyobjc modules (pyobjc is not installable in the uv env)."""
     world = types.SimpleNamespace(apps=[FakeApp()], trusted=True, windows=[], pressed=[], on_press=None,
                                   session={"kCGSSessionOnConsoleKey": True, "CGSSessionScreenIsLocked": False})
     appkit = types.ModuleType("AppKit")

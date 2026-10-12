@@ -186,7 +186,7 @@ esac
 
 
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("node"),
-                    reason="activity uses the macOS bundled runtime and Node")
+                    reason="activity runs on macOS with Node")
 @pytest.mark.parametrize("hour,vacation,holiday,enabled,expected", [
     (11, False, False, True, True),
     (12, False, False, True, False),
@@ -210,8 +210,8 @@ global.Date = class extends OriginalDate {
 console.log(JSON.stringify(require('./activity/lib').workWindow()));
 """
     result = subprocess.run(["node", "-e", script, f"2026-10-07T{hour - 8:02d}:00:00Z"],
-                            cwd=ROOT, env=os.environ.copy(), capture_output=True,
-                            text=True, check=True)
+                            cwd=ROOT, env={**os.environ, "MONITASK_ACTIVITY_PYTHON": sys.executable},
+                            capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)["ok"] is expected
 
 

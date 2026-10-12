@@ -1,11 +1,9 @@
 {
-  "install.step.files": "檢查檔案",
   "install.step.runtime": "準備 Python 執行環境與 PyObjC 相依套件",
   "install.step.telegram": "設定 Telegram 通知",
   "install.step.launchd": "安裝背景排程",
   "install.step.verify": "最終驗證",
   "install.err.macos_only": "此安裝程式僅支援 macOS",
-  "install.err.missing_file": "缺少必要檔案:{path}",
   "install.err.no_brew": "找不到 Homebrew,請先到 https://brew.sh 安裝後再重新執行",
   "install.err.brew_prefix": "無法取得 python@3.13 的路徑",
   "install.err.python_missing": "安裝後仍找不到 Python:{path}",
@@ -15,7 +13,6 @@
   "install.err.chat_format": "chat ID 必須是數字",
   "install.err.launchd": "安裝排程失敗:{error}",
   "install.err.aborted": "安裝已中止",
-  "install.files.ok": "✅ 必要檔案齊全",
   "install.runtime.rebuilt": "已重建 Python 執行檔",
   "install.runtime.ok": "✅ Python 執行環境正常",
   "install.tg.disabled": "設定已停用 Telegram,略過(.env 維持不變)",
@@ -98,5 +95,7 @@
   "install.tg.test_message": "🔔 Monitask Center 測試通知:收到這則訊息代表 Telegram 通知設定正常",
   "install.tg.test_sent": "📨 已發送 Telegram 測試通知,請自行確認是否收到(未收到請檢查 token 與 chat ID)",
   "install.tg.migrated": "已將 .env 的 token 移入認證存放區",
-  "install.tg.saved_env": "⚠️ 本機沒有認證存放區({backend}),token 已改存於 .env(僅限本人讀寫)"
+  "install.tg.saved_env": "⚠️ 本機沒有認證存放區({backend}),token 已改存於 .env(僅限本人讀寫)",
+  "install.migrated": "已將背景排程改為從 {path} 執行(不再依賴專案目錄)",
+  "install.err.migrate": "搬移背景排程失敗,請執行 monitask-center install:{error}"
 }

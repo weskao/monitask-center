@@ -8,7 +8,7 @@
 
 - 只會按 Monitask 的「播放」或「暫停」，且只有 `check.decide()` 判定需要時才按：沒有 Dock 點擊、不自動回應彈窗、不關閉 App。App 沒開或視窗被隱藏時，才會 `open -a Monitask` 並等待控制項出現(最長 30 秒)，按下後輪詢確認狀態真的改變。
 - 離座不補點、不偽造工時，也沒有 F13 / 合成輸入 / 補活動。
-- 狀態讀取集中在 `monitask.py` 的 `read_state()`：先確認 App 是否執行，再讀 `~/Library/Application Support/Monitask/Periods/` 中最後修改的 JSON；`DateLastActive` 距今小於 180 秒視為 `timing`，否則為 `paused`。不需 Accessibility(AX)權限；自動播放/暫停仍透過 `set_playing()` 使用 AX，並以按鈕狀態即時確認結果。
+- 狀態讀取集中在 `engine.py` 的 `read_state()`：先確認 App 是否執行，再讀 `~/Library/Application Support/Monitask/Periods/` 中最後修改的 JSON；`DateLastActive` 距今小於 180 秒視為 `timing`，否則為 `paused`。不需 Accessibility(AX)權限；自動播放/暫停仍透過 `set_playing()` 使用 AX，並以按鈕狀態即時確認結果。
 - 180 秒是暫定門檻(`PERIOD_MAX_AGE_S`)；檔案約每分鐘更新，暫停後最多約 3 分鐘才會辨識為 `paused`。尚待實際暫停觀察校準；`DateLastActive` 反映活動時間，不能保證等同計時器即時狀態。
 
 ## 每個工作日會發生什麼
@@ -38,16 +38,18 @@ launchd 在設定的整點喚醒 `check`（預設 10:00 ~ 18:00，每 1 小時�
 
 ## 首次設定
 
-需要 macOS、Homebrew、[uv](https://docs.astral.sh/uv/)，並已安裝、登入 Monitask 桌面程式。在專案目錄執行：
+需要 macOS、Homebrew、[uv](https://docs.astral.sh/uv/)，並已安裝、登入 Monitask 桌面程式。不需要 clone 專案：
 
 ```bash
-uv tool install --editable .     # 安裝 monitask-center 指令
+uv tool install --from git+https://github.com/weskao/monitask-center.git@vX.Y.Z monitask-center
 monitask-center install          # 一次完成其餘設定
 ```
 
-`monitask-center install` 會依序：確認檔案 → 準備執行環境 → (選用)設定 Telegram → 載入 launchd job → 最終驗證。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
+`X.Y.Z` 換成要安裝的[版本](https://github.com/weskao/monitask-center/releases)；省略 `@vX.Y.Z` 會裝 `main` 的最新程式。開發時在 checkout 用 `make install`(editable)。
 
-活動率通知使用獨立的 Node.js 排程。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會輸出實際 Node 執行檔路徑，請將該路徑加入「系統設定 → 隱私權與安全性 → 完整磁碟存取權」。macOS 不允許安裝程式自行授予此權限。Node.js 更新後若背景工作再次出現 `EPERM`，請重新加入目前輸出的路徑。
+`monitask-center install` 會依序：準備執行環境 → (選用)設定 Telegram → 載入 launchd job → 最終驗證。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
+
+活動率通知使用獨立的 Node.js 排程，需在 checkout 內執行，並沿用 `monitask-center install` 建立的 python 執行環境讀取主設定。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會輸出實際 Node 執行檔路徑，請將該路徑加入「系統設定 → 隱私權與安全性 → 完整磁碟存取權」。macOS 不允許安裝程式自行授予此權限。Node.js 更新後若背景工作再次出現 `EPERM`，請重新加入目前輸出的路徑。
 
 活動率直接請求 Monitask 的 `/Report/TimeSpanPartial` HTML 資料，沿用專用登入 session，不等待網頁渲染。預設自動取得登入者自己的成員 ID，無需 OAuth client 或個人 ID 寫入程式。首次使用需先準備依賴與登入：
 
@@ -60,9 +62,9 @@ bash activity/install.sh install
 
 個別報表設定可在專案 `.env` 加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。此端點屬網站內部介面，格式仍可能改動；「最近一小時」仍為近六段的估計值。
 
-- **執行環境全自動**：缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；`MonitaskCenter.app` 內的 python runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
+- **執行環境全自動**：全部放在 `~/Library/Application Support/MonitaskCenter/`，不依賴任何 checkout。缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；產生 `MonitaskCenter.app`(內含 python runner)與 launchd 進入點 `run.sh`；runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`；未授權時動作會回報失敗並通知，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。
-- **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入專案目錄 `.env`(權限 600，已被 `.gitignore` 排除，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。Telegram 關閉或傳送失敗時退回 macOS 通知。
+- **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入 `~/.monitask-center/.env`(權限 600，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。Telegram 關閉或傳送失敗時退回 macOS 通知。
 
 ## 設定:`monitask-center --config`
 
@@ -106,7 +108,7 @@ bash activity/install.sh install
 Makefile 只是薄包裝：
 
 ```bash
-make install     # 只安裝 CLI：uv tool install --editable . --force
+make install     # 開發用，只安裝 CLI：uv tool install --editable . --force
 make config      # monitask-center --config
 make status      # monitask-center status
 make plan        # monitask-center plan
@@ -118,16 +120,16 @@ make help        # 列出全部
 
 ## 檢查更新
 
-預設開啟(`--config` 的「檢查更新」可關)。`monitask-center` 指令執行時會在背景用 `git ls-remote --tags` 查詢 origin 的最新 `vX.Y.Z` 標籤(最多每 10 分鐘一次，結果存 `~/.monitask-center/update-check.json`)，指令結束後若有更新版本：
+預設開啟(`--config` 的「檢查更新」可關)。`monitask-center` 指令執行時會在背景查詢 GitHub releases API 的最新版本(公開 repo，不需登入；最多每 10 分鐘一次，結果存 `~/.monitask-center/update-check.json`)，指令結束後若有更新版本：
 
-- 互動終端機：顯示選單 — 立即更新(`git pull --ff-only` 後 `uv tool install --editable . --force`)、略過(下次再問)、略過到下一版。
+- 互動終端機：顯示選單 — 立即更新(`uv tool install --force --from git+https://github.com/weskao/monitask-center.git@<新版標籤> monitask-center`，裝的是該版本標籤而非 `main`，再用新版程式同步執行環境與 launchd)、略過(下次再問)、略過到下一版。
 - 管線或非 TTY：只在 stderr 印一行提示，不阻塞。
 
 `check`、`dump-windows`、`logs` 與 launchd 排程不做檢查。離線或查詢失敗時靜默略過。
 
 ## launchd 排程
 
-只有**一個** job：`com.monitask-center.check`，用 `StartCalendarInterval` 在每個設定的整點(分鐘 0)各一筆，經由 `run.sh` 執行。
+兩個 job：`com.monitask-center.check` 用 `StartCalendarInterval` 在每個設定的整點(分鐘 0)各一筆；`com.monitask-center.overtime` 見「下班詢問」。兩者都經由 `~/Library/Application Support/MonitaskCenter/run.sh` 執行。
 
 安裝與移除時會一併清掉舊版 job：`morning`、`lunch`、`afternoon`、`evening`、`night-start`、`night-stop`、`watch`(標籤 `com.monitask-center.<名稱>`)，以及舊 bundle id 前綴 `com.dannylin.monitask-center.*` 與 `com.dannylin.monitask.*` 的對應 job。
 
@@ -142,20 +144,21 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | 路徑 | 角色 |
 |------|------|
 | `TODO.md` | 待辦與建議事項 |
-| `monitask.py` | 狀態引擎(本機 Period 檔案；按鈕操作使用 AX)，含 `set_playing()` 按播放/暫停。子命令：`check` / `status` / `dump-windows`；`read_state()` 回傳 `timing` / `paused` / `unknown` / `not-running` |
-| `run.sh` | launchd 進入點：設定 `PYTHONPATH`(`src`、`pylibs`)、載入 `.env`，再用 bundle 內 python 跑 `monitask.py` |
-| `MonitaskCenter.app` | 內含 python 副本；**AX 授權對象**(TCC 身分 `com.dannylin.monitask-center`)，勿刪 |
-| `pyfix/sitecustomize.py` | 補 `platform.mac_ver()`(僅 pip 下載 wheel 時用到) |
-| `pylibs/` | 安裝程式透過 pip 裝入的 PyObjC wheel(不入版控) |
+| `src/monitask_center/engine.py` | 狀態引擎(本機 Period 檔案；按鈕操作使用 AX)，含 `set_playing()` 按播放/暫停。子命令：`check` / `overtime` / `status` / `dump-windows`；`read_state()` 回傳 `timing` / `paused` / `unknown` / `not-running` |
+| `src/monitask_center/_pyfix/sitecustomize.py` | 補 `platform.mac_ver()`(僅 pip 下載 wheel 時用到) |
 | `src/monitask_center/` | `uv tool` 指令套件(僅標準函式庫)：`cli.py` 指令入口、`config.py` 設定、`update_check.py` 更新檢查(與 aicp 共用同一份)、`check.py` 判斷與上次檢查紀錄、`workday.py` 工作日、`launchd.py` 排程、`install.py` 安裝、`status.py` 狀態、`notify.py` 通知與日誌、`i18n.py` 多語系 |
 | `src/monitask_center/tui/` | `--config` 選單：`menu.py`、`present.py`、`keyreader.py`、`logo.py`(兩種尺寸的標題 logo) |
 | `src/monitask_center/locales/<lang>/*.json` | 各語言文字(目前 `zh-TW`) |
 | `tests/` | pytest 測試(含 i18n 守門) |
-| `activity/` | 活動率監控，**獨立的選用功能**，與本工具的 launchd job 無關 |
-| `.env` | 僅在無認證存放區時的後備：`TG_BOT_TOKEN` + `TG_CHAT_ID`(不入版控) |
+| `activity/` | 活動率監控，**獨立的選用功能**，有自己的 launchd job；讀主設定時使用 `~/Library/Application Support/MonitaskCenter/` 的 python 與 `pylibs` |
+| `.env` | 活動率監控的設定(`activity/run.sh` 讀取，不入版控) |
+| `~/.monitask-center/.env` | 僅在無認證存放區時的後備：`TG_BOT_TOKEN` + `TG_CHAT_ID` |
 | `~/.monitask-center/config.json` | 使用者設定(單一檔案，不放在專案目錄) |
 | `~/.monitask-center/last-check.json` | 上次檢查結果 |
 | `~/.monitask-center/holidays/` | 政府行事曆快取(每年一檔) |
+| `~/Library/Application Support/MonitaskCenter/run.sh` | launchd 進入點(由 `install` 產生)：`PYTHONPATH` 設為 `pylibs` 與已安裝的套件，載入 `~/.monitask-center/.env`，再用 bundle 內 python 執行 `python -m monitask_center.engine` |
+| `~/Library/Application Support/MonitaskCenter/MonitaskCenter.app` | 內含 python 副本；**AX 授權對象**(TCC 身分 `com.dannylin.monitask-center`)，勿刪 |
+| `~/Library/Application Support/MonitaskCenter/pylibs/` | 安裝程式透過 pip 裝入的 PyObjC wheel 與 telegram-kit |
 | `~/Library/Application Support/MonitaskCenter/monitask.log` | 日誌 |
 
 ## 多語系(i18n)
@@ -185,5 +188,6 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 
 - **需要自動播放/暫停時保留 AX 授權** `MonitaskCenter.app`；移除授權不影響狀態讀取與提醒。launchd 一律經 `run.sh` 以 `/bin/bash` 呼叫 bundle 內 python(直接 exec bundle 執行檔會被當 app 啟動而失效)。
 - **brew 升級 `python@3.13`** 可能讓 bundle 內 python 副本連結的 framework 路徑失效：重跑 `monitask-center install` 會重建 runner 並重新簽章；重簽後可能需要重新授予 Accessibility。
-- 一律用 `uv tool install --editable .` 安裝(`make install`)：launchd 與 CLI 都跑 checkout 內的程式，更新(`git pull` 後重新安裝)才會真的換成新版；若誤用非 editable 安裝，`config.PROJECT_ROOT` 會從 `uv-receipt.toml` 找回 checkout，但 CLI 仍是 venv 內的舊副本，請改回 editable。「立即更新」會依序 `git pull`、editable 重新安裝、同步 launchd(新版新增的 job 會自動安裝)。從 1.4.0 以前的版本更新時舊版不會同步，新版會在下一次整點 `check` 或任何 CLI 指令(`install`/`uninstall` 除外)時補裝缺少的 job。
-- 修改程式碼不需重新安裝(`--editable`)；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。
+- **執行環境不在 checkout 裡**：launchd 執行 `~/Library/Application Support/MonitaskCenter/run.sh`，它指向目前安裝的 `monitask_center` 套件(git 標籤安裝時在 uv tool venv，editable 安裝時在 checkout 的 `src/`)。換了安裝方式或 venv 的 Python 版本，任何 CLI 指令(`install`/`uninstall` 除外)都會重寫 `run.sh`。
+- **從 1.5.0 以前升級**：舊版的 job 從 checkout 執行。新版在「立即更新」的同步步驟，或任何 CLI 指令(`install`/`uninstall` 除外)時，會把 `MonitaskCenter.app`(保留 Accessibility 授權)、`pylibs`、`.env` 從 checkout 複製到上述目錄，產生 `run.sh`，再把 job 改指向它。若 `git pull` 已刪掉 checkout 內的 bundle，會用 Homebrew 的 python 重建並重新簽章，這時可能需要重新授予 Accessibility。整點 `check` 無法自行搬移(它本身就從舊位置執行)，所以 `git pull` 之後請執行任一 `monitask-center` 指令。
+- 開發時用 `make install`(editable)：修改程式碼不需重新安裝；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。

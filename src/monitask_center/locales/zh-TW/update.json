@@ -1,13 +1,13 @@
 {
   "update.available": "monitask-center {latest} 已推出(目前是 {current})",
-  "update.command": "  git pull --ff-only && uv tool install --editable . --force",
+  "update.command": "  uv tool install --force --from {source} monitask-center",
   "update.now": "立即更新",
-  "update.now_detail": "git pull + 重新安裝",
+  "update.now_detail": "從 GitHub 安裝這個版本",
   "update.skip": "略過",
   "update.skip_detail": "下次執行再問",
   "update.skip_version": "略過到下一版",
   "update.skip_version_detail": "有新版本推出後才會再詢問",
   "update.notes": "版本說明:{url}",
   "update.keys": "↑↓ 選擇 · ⏎ 確認 · q/Ctrl+C 略過",
-  "update.failed": "更新沒有完成 — 請在專案目錄自行執行:git pull --ff-only && uv tool install --editable . --force"
+  "update.failed": "更新沒有完成 — 請自行執行:uv tool install --force --from {source} monitask-center,再執行 monitask-center status"
 }

@@ -1,6 +1,8 @@
 """Installer tests: tmp project/HOME and a fake subprocess layer; nothing real is ever run."""
 
 import os
+import plistlib
+import shutil
 import stat
 import subprocess
 import sys
@@ -92,8 +94,6 @@ class FakeSystem:
 @pytest.fixture
 def system(tmp_path, monkeypatch):
     fake = FakeSystem(tmp_path)
-    (tmp_path / "MonitaskCenter.app/Contents").mkdir(parents=True)
-    (tmp_path / "MonitaskCenter.app/Contents/Info.plist").write_text("<plist/>")
     (tmp_path / "bin").mkdir()
     brew = tmp_path / "bin/brew"
     brew.write_text("#!/bin/sh\n")
@@ -102,6 +102,13 @@ def system(tmp_path, monkeypatch):
     monkeypatch.setattr(install.shutil, "which", lambda name: str(brew))
     monkeypatch.setattr(install, "_is_macos", lambda: True)
     return fake
+
+
+def _env_file() -> Path:
+    """The Telegram fallback .env, which lives with the settings now, not in a checkout."""
+    path = config.home_dir() / ".env"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def run(settings=None, **kw):
@@ -114,7 +121,7 @@ def run(settings=None, **kw):
 
 
 def test_fresh_install_bootstraps_every_job_and_keeps_env(system, tmp_path, capsys):
-    env = tmp_path / ".env"
+    env = _env_file()
     env.write_bytes(b"OTHER_SETTING=preserved\n")
     assert run() == 0
     assert system.count("loaded") == len(launchd.JOBS) and launchd.plist_path("check").exists()
@@ -181,7 +188,7 @@ def test_broken_or_outdated_runner_is_rebuilt(system, broken):
 
 def test_telegram_token_goes_to_the_credential_store_and_the_chat_id_to_config(
         system, tmp_path, capsys, monkeypatch, no_real_keychain):
-    env = tmp_path / ".env"
+    env = _env_file()
     env.write_text("OTHER_SETTING=preserved\n")  # unrelated entries must survive untouched
     sent = []
     monkeypatch.setattr(telegram, "send", lambda text, chat_id="": sent.append((text, chat_id)) or True)
@@ -197,7 +204,7 @@ def test_telegram_token_goes_to_the_credential_store_and_the_chat_id_to_config(
 
 
 def test_a_token_already_in_env_is_migrated_into_the_store(system, tmp_path, capsys, no_real_keychain):
-    env = tmp_path / ".env"
+    env = _env_file()
     env.write_text(f"OTHER=keep\nTG_BOT_TOKEN={TOKEN}\n")
     assert run(confirm=lambda q: False) == 0  # declining the prompt still migrates
     assert no_real_keychain[telegram.TOKEN_KEY] == TOKEN
@@ -211,7 +218,7 @@ def test_without_a_credential_store_the_token_falls_back_to_env(
     monkeypatch.setattr(telegram, "backend_label", lambda: "none")
     monkeypatch.setattr(telegram, "set_token", lambda v: False)
     monkeypatch.setattr(telegram, "token", lambda: "")
-    env = tmp_path / ".env"
+    env = _env_file()
     answers = iter(["-123"])
     assert run(getpass_fn=lambda prompt="": TOKEN, input_fn=lambda prompt="": next(answers),
                confirm=lambda q: True) == 0
@@ -226,7 +233,7 @@ def test_a_valid_pair_is_kept_and_never_re_prompted(
         system, tmp_path, capsys, monkeypatch, no_real_keychain):
     no_real_keychain[telegram.TOKEN_KEY] = TOKEN
     config.save(Settings(telegram_chat_id="-123"))  # both halves already present
-    env = tmp_path / ".env"
+    env = _env_file()
     env.write_bytes(b"OTHER=keep\n")
     boom = lambda *a, **k: pytest.fail("prompted")  # noqa: E731
     assert run(config.load(), getpass_fn=boom, input_fn=boom, confirm=boom) == 0
@@ -245,7 +252,7 @@ def test_invalid_token_fails_before_launchd(system, tmp_path, capsys):
     helper.parent.mkdir(parents=True)
     helper.write_text("")
     assert run(getpass_fn=lambda prompt="": "not a token", confirm=lambda q: True) == 1
-    assert system.count("loaded") == 0 and not (tmp_path / ".env").exists()
+    assert system.count("loaded") == 0 and not (config.home_dir() / ".env").exists()
     assert "not a token" not in capsys.readouterr().err
 
 
@@ -298,3 +305,71 @@ def test_uninstall_removes_job(system, capsys):
     assert not launchd.plist_path("check").exists()
     assert install.uninstall() == 0
     assert t("install.uninstall.none") in capsys.readouterr().out
+
+
+def test_install_builds_the_bundle_and_runner_outside_any_checkout(system):
+    assert run() == 0
+    p = install.Paths()
+    info = plistlib.loads(p.info_plist.read_bytes())
+    assert info["CFBundleIdentifier"] == "com.dannylin.monitask-center"  # the TCC identity
+    runner = p.runner_sh.read_text()
+    assert os.access(p.runner_sh, os.X_OK)
+    assert f"{p.pylibs}:{install.PACKAGE_PARENT}" in runner  # pylibs first: its deps match the runner
+    assert f"{p.python_runner} -m monitask_center.engine" in runner and str(p.env) in runner
+    assert plistlib.loads(launchd.plist_path("check").read_bytes())["ProgramArguments"][1] == str(p.runner_sh)
+
+
+def _legacy_checkout(tmp_path: Path) -> Path:
+    """What 1.5.0 leaves: jobs running <checkout>/run.sh, the signed bundle and pylibs in the checkout."""
+    root = tmp_path / "checkout"
+    runner = root / "MonitaskCenter.app/Contents/MacOS/python-runner"
+    runner.parent.mkdir(parents=True)
+    runner.write_text(PYTHON_VERSION)
+    (root / "MonitaskCenter.app/Contents/Info.plist").write_bytes(install.INFO_PLIST)
+    (root / "pylibs/AppKit").mkdir(parents=True)
+    (root / ".env").write_text("TG_CHAT_ID=-1\n")
+    launchd.agents_dir().mkdir(parents=True)
+    for job in launchd.JOBS:
+        spec = plistlib.loads(launchd.render(job, Settings()))
+        spec["ProgramArguments"][1] = str(root / "run.sh")
+        launchd.plist_path(job).write_bytes(plistlib.dumps(spec))
+    return root
+
+
+def test_migrate_moves_jobs_off_the_checkout_once(system, tmp_path):
+    assert install.migrate(Settings()) is None  # nothing installed: nothing to move
+    _legacy_checkout(tmp_path)
+    system.deps = True  # the carried-over pylibs import fine
+    assert install.migrate(Settings()) == t("install.migrated", path=tmp_path)
+    p = install.Paths()
+    assert p.python_runner.read_text() == PYTHON_VERSION and p.pylibs.is_dir()
+    assert system.count("codesign") == 0 and system.count("pip") == 0  # same bundle: the grant survives
+    assert stat.S_IMODE(p.env.stat().st_mode) == 0o600 and "TG_CHAT_ID=-1" in p.env.read_text()
+    assert launchd.foreign_jobs() == [] and system.count("loaded") == len(launchd.JOBS)
+    assert install.migrate(Settings()) is None and system.count("loaded") == len(launchd.JOBS)
+
+
+def test_migrate_rebuilds_a_bundle_git_already_deleted(system, tmp_path):
+    legacy = _legacy_checkout(tmp_path)
+    shutil.rmtree(legacy / "MonitaskCenter.app")  # `git pull` of this release removes the tracked bundle
+    system.deps = True
+    assert install.migrate(Settings()) == t("install.migrated", path=tmp_path)
+    assert system.count("codesign") == 1 and install.Paths().python_runner.read_text() == PYTHON_VERSION
+
+
+def test_migrate_failure_is_a_message(system, tmp_path, monkeypatch):
+    _legacy_checkout(tmp_path)
+    monkeypatch.setattr(install, "_find_brew", lambda: (_ for _ in ()).throw(install.InstallError("no brew")))
+    assert install.migrate(Settings()) == t("install.err.migrate", error="no brew")
+    assert launchd.foreign_jobs() == list(launchd.JOBS)  # jobs left on the old, still-working runner
+
+
+
+def test_update_from_1_5_0_syncs_onto_the_new_runtime(system, tmp_path):
+    """1.5.0's "Update now" ends with launchd.sync() in the new code, before any migrate ran."""
+    _legacy_checkout(tmp_path)
+    config.RUNNER.unlink()  # conftest's placeholder: nothing built the runtime yet
+    system.deps = True
+    assert launchd.sync(Settings()) == ("reinstalled", list(launchd.JOBS))
+    assert launchd.foreign_jobs() == [] and config.RUNNER.is_file()
+    assert system.count("codesign") == 0  # the checkout's signed bundle was carried over

@@ -1,7 +1,7 @@
 """launchd LaunchAgents: render, detect drift, (re)install, remove.
 
-One job, `check` (StartCalendarInterval at each configured hour). Lunch is decided
-at runtime, so it never appears in the plist. Drift = the plist rendered from
+Jobs `check` (StartCalendarInterval at each configured hour) and `overtime`, both running
+config.RUNNER. Lunch is decided at runtime, so it never appears in the plist. Drift = the plist rendered from
 current settings differs byte-for-byte from the installed file; only drifted jobs
 are reloaded.
 """
@@ -66,6 +66,17 @@ def stale_jobs(settings: config.Settings) -> list[str]:
     return [job for job in JOBS if not current(job)]
 
 
+def foreign_jobs() -> list[str]:
+    """Installed jobs that run something other than config.RUNNER (a 1.5.0-and-older checkout)."""
+    def runner(job: str) -> str | None:
+        try:
+            return plistlib.loads(plist_path(job).read_bytes())["ProgramArguments"][1]
+        except (OSError, ValueError, KeyError, IndexError, TypeError, plistlib.InvalidFileException):
+            return None
+
+    return [job for job in JOBS if plist_path(job).exists() and runner(job) != str(config.RUNNER)]
+
+
 DETAIL_MAX = 80
 
 
@@ -125,7 +136,16 @@ def install(settings: config.Settings, jobs: list[str] | None = None) -> list[st
     """Write and (re)load *jobs* (default: all). On bootstrap failure the plist is rolled back and
     LaunchdError re-raised."""
     if not config.RUNNER.is_file():
-        raise FileNotFoundError(config.RUNNER)
+        # "Update now" in 1.5.0 calls sync() from the new code before anything built the runtime.
+        from .install import (  # lazy: install imports launchd
+            InstallError,
+            ensure_runtime,
+        )
+
+        try:
+            ensure_runtime()
+        except InstallError as exc:  # callers handle OSError; keep the reason as the cause
+            raise FileNotFoundError(config.RUNNER) from exc
     jobs = list(JOBS) if jobs is None else jobs
     _cleanup_legacy()
     agents_dir().mkdir(parents=True, exist_ok=True)

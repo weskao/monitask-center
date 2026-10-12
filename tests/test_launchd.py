@@ -154,9 +154,20 @@ def test_loaded_ignores_activity_job_and_header(monkeypatch):
     assert launchd.loaded() == []
 
 
-def test_install_needs_runner(calls, monkeypatch, tmp_path):
+def test_install_builds_a_missing_runner_or_fails_as_os_error(calls, monkeypatch, tmp_path):
+    from monitask_center import install
+
     monkeypatch.setattr(config, "RUNNER", tmp_path / "missing.sh")
-    with pytest.raises(FileNotFoundError):
+    built = []
+    monkeypatch.setattr(install, "ensure_runtime", lambda: built.append(1) or config.RUNNER.write_text(""))
+    assert launchd.install(Settings(), ["check"]) == ["check"] and built == [1]  # 1.5.0's sync step
+    config.RUNNER.unlink()
+
+    def fail():
+        raise install.InstallError("no brew")
+
+    monkeypatch.setattr(install, "ensure_runtime", fail)
+    with pytest.raises(FileNotFoundError):  # an OSError: every caller already reports those
         launchd.install(Settings())
 
 

@@ -1,5 +1,5 @@
-#!/opt/homebrew/opt/python@3.13/bin/python3.13
-"""Monitask state engine (local Period files), run by run.sh under the bundled python.
+"""Monitask state engine (local Period files): `python -m monitask_center.engine`, run by run.sh
+under the python copy inside MonitaskCenter.app.
 
 Commands:
   check         hourly check (launchd): decide, then notify (remind / warn_unknown) or press
@@ -23,10 +23,6 @@ import sys
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent
-# pyobjc comes from the unpacked wheels (launchd also sets PYTHONPATH; belt and braces)
-sys.path[:0] = [str(ROOT / "src"), str(ROOT / "pylibs")]
 
 import AppKit
 import ApplicationServices as AX

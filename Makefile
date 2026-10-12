@@ -7,7 +7,7 @@ PROJECT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 help:
 	@printf '%s\n' \
 		'Monitask Center commands (thin wrappers around the monitask-center CLI):' \
-		'  make install    Install the CLI (uv tool, editable); then run: monitask-center install' \
+		'  make install    Dev: install the CLI from this checkout (uv tool, editable); then run: monitask-center install' \
 		'  make config     Open the interactive settings menu' \
 		'  make uninstall  Remove the launchd job' \
 		'  make status     Show workday, schedule and Monitask status' \

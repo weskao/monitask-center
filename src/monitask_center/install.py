@@ -2,12 +2,19 @@
 
 Port of the old setup.sh. Idempotent: a repeat run only repairs what is broken, so the
 MonitaskCenter.app identity survives. Never controls Monitask.
+
+The launchd runtime (run.sh, MonitaskCenter.app, pylibs) is built in config.data_dir(), never in a
+checkout: the CLI may be a `uv tool install --from git+...@vX.Y.Z` copy with no clone at all.
 """
 
 from __future__ import annotations
 
+import contextlib
 import getpass
+import io
 import os
+import plistlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -20,13 +27,24 @@ from .i18n import t
 BREW_FALLBACKS = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")
 FORMULA = "python@3.13"
 # telegram-kit rides along with PyObjC so launchd's bare python finds it on PYTHONPATH:
-# run.sh exports src:pylibs, not the uv venv the CLI runs from.
+# run.sh puts pylibs ahead of the installed package, never the uv venv's own site-packages deps.
 PIP_PACKAGES = ("pyobjc-framework-Cocoa", "pyobjc-framework-ApplicationServices",
                 "pyobjc-framework-Quartz", "telegram-kit>=0.2.0,<0.3")
 IMPORT_PROBE = "import AppKit, ApplicationServices, Foundation, Quartz, telegram_kit"
 TOKEN_RE = telegram.TOKEN_RE
 CHAT_RE = telegram.CHAT_RE
 ENV_KEYS = telegram.ENV_KEYS
+#: The directory holding the monitask_center package: the checkout's src/ for an editable install,
+#: the tool venv's site-packages otherwise. run.sh puts it on PYTHONPATH.
+PACKAGE_PARENT = Path(__file__).resolve().parent.parent
+# Bundle id = the TCC identity the Accessibility grant belongs to; never change it.
+INFO_PLIST = plistlib.dumps({
+    "CFBundleIdentifier": "com.dannylin.monitask-center",
+    "CFBundleName": "MonitaskCenter",
+    "CFBundleExecutable": "python-runner",
+    "CFBundlePackageType": "APPL",
+    "LSUIElement": True,
+})
 
 
 class InstallError(Exception):
@@ -68,10 +86,11 @@ class Paths:
         self.root = config.RUNNER.parent
         self.runner_sh = config.RUNNER
         self.app = self.root / "MonitaskCenter.app"
+        self.info_plist = self.app / "Contents/Info.plist"
         self.python_runner = self.app / "Contents/MacOS/python-runner"
         self.pylibs = self.root / "pylibs"
-        self.pyfix = self.root / "pyfix"
-        self.env = self.root / ".env"
+        self.pyfix = Path(__file__).resolve().parent / "_pyfix"
+        self.env = config.home_dir() / ".env"
 
 
 def _find_brew() -> str:
@@ -112,11 +131,15 @@ def prepare_runtime(p: Paths) -> None:
         if not os.access(python, os.X_OK):
             raise InstallError(t("install.err.python_missing", path=python))
     # Keep an unchanged bundle identity so repeat installs retain Accessibility approval.
-    # Downloaded checkouts can quarantine this locally signed bundle; clear only its
-    # download flag before any runner probe, leaving Gatekeeper enabled system-wide.
+    new_bundle = not p.info_plist.is_file()
+    if new_bundle:
+        p.info_plist.parent.mkdir(parents=True, exist_ok=True)
+        p.info_plist.write_bytes(INFO_PLIST)
+    # A copied-in bundle can carry a quarantine flag; clear only its download flag before any
+    # runner probe, leaving Gatekeeper enabled system-wide.
     _check_run(["/usr/bin/xattr", "-dr", "com.apple.quarantine", str(p.app)])
     wanted = _version(python)
-    if wanted is None or _version(p.python_runner) != wanted:
+    if new_bundle or wanted is None or _version(p.python_runner) != wanted:
         p.python_runner.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(python, p.python_runner)
         _check_run(["codesign", "--force", "--sign", "-", str(p.app)])
@@ -126,7 +149,35 @@ def prepare_runtime(p: Paths) -> None:
                     "--only-binary=:all:", *PIP_PACKAGES], env={**os.environ, "PYTHONPATH": str(p.pyfix)})
     if not _probe_imports(p):
         raise InstallError(t("install.err.imports"))
+    write_runner(p)
     print(t("install.runtime.ok"))
+
+
+def render_runner(p: Paths) -> str:
+    """run.sh: launchd's entry point. It must go through this shell wrapper (not launchd exec'ing the
+    bundle binary directly): otherwise LaunchServices starts it as an app and the engine never runs;
+    the AX identity still belongs to the bundle, so the Accessibility grant applies."""
+    q = shlex.quote
+    return ("#!/bin/bash\n"
+            "# Written by monitask-center (install / upgrade); edits are overwritten.\n"
+            f"export PYTHONPATH={q(f'{p.pylibs}:{PACKAGE_PARENT}')}\n"
+            "# Telegram fallback (TG_BOT_TOKEN / TG_CHAT_ID) when there is no credential store\n"
+            f"[ -f {q(str(p.env))} ] && set -a && . {q(str(p.env))} && set +a\n"
+            f'exec {q(str(p.python_runner))} -m monitask_center.engine "$@"\n')
+
+
+def write_runner(p: Paths) -> bool:
+    """(Re)write run.sh when it differs from render_runner -> whether it changed."""
+    text = render_runner(p)
+    try:
+        if p.runner_sh.read_text(encoding="utf-8") == text:
+            return False
+    except OSError:
+        pass
+    p.runner_sh.parent.mkdir(parents=True, exist_ok=True)
+    p.runner_sh.write_text(text, encoding="utf-8")
+    p.runner_sh.chmod(0o755)
+    return True
 
 
 def _store_token(p: Paths, value: str) -> bool:
@@ -195,11 +246,6 @@ def run_install(settings: config.Settings, *, input_fn=input, getpass_fn=getpass
         if not _is_macos():
             raise InstallError(t("install.err.macos_only"))
         p = Paths()
-        _say("install.step.files")
-        for path in (p.runner_sh, p.app / "Contents/Info.plist"):
-            if not path.is_file():
-                raise InstallError(t("install.err.missing_file", path=path))
-        print(t("install.files.ok"))
         _say("install.step.runtime")
         prepare_runtime(p)
         _say("install.step.telegram")
@@ -231,3 +277,53 @@ def uninstall() -> int:
     removed = launchd.uninstall()
     print(t("install.uninstall.done", jobs=", ".join(removed)) if removed else t("install.uninstall.none"))
     return 0
+
+
+
+def _legacy_root(p: Paths) -> Path | None:
+    """The checkout an installed check job still runs from (1.5.0 and older), else None."""
+    try:
+        args = plistlib.loads(launchd.plist_path("check").read_bytes())["ProgramArguments"]
+        root = Path(args[1]).parent
+    except (OSError, ValueError, KeyError, IndexError, TypeError, plistlib.InvalidFileException):
+        return None
+    return None if root == p.root else root
+
+
+def ensure_runtime(p: Paths | None = None) -> bool:
+    """Build the launchd runtime in data_dir() when it is missing, else only refresh run.sh.
+
+    From a 1.5.0-and-older checkout layout, carry over what is still there (the signed bundle, so
+    the Accessibility grant is kept; pylibs, so nothing is downloaded; .env), then let
+    prepare_runtime rebuild the rest. -> whether anything changed. Raises InstallError/OSError."""
+    p = p or Paths()
+    if p.python_runner.is_file() and p.pylibs.is_dir():
+        return write_runner(p)
+    if legacy := _legacy_root(p):
+        for name, target in (("MonitaskCenter.app", p.app), ("pylibs", p.pylibs)):
+            if (legacy / name).is_dir() and not target.exists():
+                shutil.copytree(legacy / name, target, symlinks=True)
+        if (legacy / ".env").is_file() and not p.env.exists():
+            p.env.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy / ".env", p.env)
+            p.env.chmod(0o600)
+    with contextlib.redirect_stdout(io.StringIO()):  # its progress lines are for `install` only
+        prepare_runtime(p)
+    return True
+
+
+def migrate(settings: config.Settings) -> str | None:
+    """Upgrade migration (any CLI command, and "Update now"): launchd jobs run data_dir()/run.sh.
+
+    1.5.0 and older ran them from the checkout. Costs a few stats and two plist reads when there is
+    nothing to do; never raises. -> a line to print when it did something, else None."""
+    if not launchd.is_installed():
+        return None
+    try:
+        moved = ensure_runtime()
+        jobs = launchd.foreign_jobs()
+        if jobs:
+            launchd.install(settings, jobs)
+    except (InstallError, subprocess.SubprocessError, OSError) as exc:
+        return t("install.err.migrate", error=launchd.describe_error(exc))
+    return t("install.migrated", path=config.RUNNER.parent) if moved or jobs else None

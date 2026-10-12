@@ -39,9 +39,12 @@ reason = "outside"
 if ok:
     ok, reason = workday.peek_status(date.fromisoformat(sys.argv[1]), s)
 print(json.dumps({"ok": ok, "shift": reason}))`;
-  const result = execFileSync(path.join(root, 'MonitaskCenter.app/Contents/MacOS/python-runner'),
-    ['-c', script, iso, hour], { encoding: 'utf8', timeout: 15000,
-      env: { ...process.env, PYTHONPATH: `${path.join(root, 'src')}:${path.join(root, 'pylibs')}` } });
+  // The runtime `monitask-center install` builds: its python copy, plus pylibs for telegram-kit.
+  const runtime = path.join(require('os').homedir(), 'Library/Application Support/MonitaskCenter');
+  const python = process.env.MONITASK_ACTIVITY_PYTHON
+    || path.join(runtime, 'MonitaskCenter.app/Contents/MacOS/python-runner');
+  const result = execFileSync(python, ['-c', script, iso, hour], { encoding: 'utf8', timeout: 15000,
+    env: { ...process.env, PYTHONPATH: `${path.join(root, 'src')}:${path.join(runtime, 'pylibs')}` } });
   return { ...JSON.parse(result), iso, reportDate: `${month}/${day}/${year}` };
 }
 

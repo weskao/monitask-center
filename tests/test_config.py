@@ -240,15 +240,3 @@ def test_overtime_defaults_and_bad_stored_value_falls_back():
     config.config_path().write_text('{"overtime_minutes": 1000, "overtime_prompt": false}')
     loaded = config.load()
     assert loaded.overtime_minutes == 18 * 60 + 30 and loaded.overtime_prompt is False
-
-
-def test_project_root_falls_back_to_the_uv_receipt_source(tmp_path):
-    package, prefix, source = tmp_path / "venv-pkg", tmp_path / "venv", tmp_path / "checkout"
-    for d in (package, prefix, source):
-        d.mkdir()
-    (source / "run.sh").write_text("")
-    (prefix / "uv-receipt.toml").write_text(f'requirements = [{{ name = "x", directory = "{source}" }}]\n')
-    assert config.project_root(package, prefix) == source  # non-editable install: package has no run.sh
-    (package / "run.sh").write_text("")
-    assert config.project_root(package, prefix) == package  # editable install wins
-    assert config.project_root(tmp_path / "none", tmp_path / "no-receipt") == tmp_path / "none"

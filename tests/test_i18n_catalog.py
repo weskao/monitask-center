@@ -17,8 +17,8 @@ from monitask_center.tui import menu
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-PY_FILES = sorted(p for p in SRC.rglob("*.py") if "locales" not in p.parts) + [ROOT / "monitask.py"]
-SCAN_FILES = [*PY_FILES, ROOT / "run.sh", ROOT / "Makefile"]
+PY_FILES = sorted(p for p in SRC.rglob("*.py") if "locales" not in p.parts)
+SCAN_FILES = [*PY_FILES, ROOT / "Makefile"]
 
 CJK_RE = re.compile("[一-鿿　-ヿ＀-￯]")
 FORBIDDEN_RE = re.compile(
@@ -112,7 +112,6 @@ def test_no_cjk_or_fullwidth_in_code():
 
 def test_no_forbidden_control_strings():
     files = [p for p in SRC.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
-    files.append(ROOT / "monitask.py")
     bad = [f"{p.relative_to(ROOT)}:{n}: {line.strip()}" for p in files
            for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
            if FORBIDDEN_RE.search(line)]
@@ -150,8 +149,8 @@ def test_variable_keys_are_string_constants_in_the_catalog():
     _, _, unresolved = _scan_calls()
     constants = _string_constants()
     keyish = {c for c in constants if c in _catalog()}
-    assert unresolved, "expected t(variable) call sites (monitask.py key, install._say, _commit done)"
-    assert {"check.remind_paused", "check.remind_not_running", "install.step.files", "tui.saved",
+    assert unresolved, "expected t(variable) call sites (engine.py key, install._say, _commit done)"
+    assert {"check.remind_paused", "check.remind_not_running", "install.step.runtime", "tui.saved",
             "tui.reset_done"} <= keyish
 
 

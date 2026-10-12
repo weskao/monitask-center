@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import subprocess
 
 from monitask_center import cli, config, i18n, update_check
 from monitask_center.tui import keyreader, menu, present
@@ -12,29 +11,18 @@ from monitask_center.tui import keyreader, menu, present
 FOUND = update_check.UpdateAvailable(current="1.0.0", latest="v1.1.0")
 
 
-def _tags(monkeypatch, stdout):
-    done = subprocess.CompletedProcess([], 0, stdout=stdout)
-    monkeypatch.setattr(subprocess, "run", lambda *a, **k: done)
+def test_check_asks_the_public_github_releases_api(monkeypatch):
+    asked = []
 
+    def fetch(repo, timeout):
+        asked.append(repo)
+        return json.dumps({"tag_name": "v9.0.0"})
 
-def test_newest_tag_wins_numerically(monkeypatch):
-    monkeypatch.undo()  # the autouse fixture stubs _fetch_git_tags; this test wants the real one
-    _tags(monkeypatch, "a\trefs/tags/v0.9.0\nb\trefs/tags/v0.10.0\nc\trefs/tags/notes\n")
-    assert json.loads(cli._fetch_git_tags("x", 1))["tag_name"] == "v0.10.0"
-
-
-def test_offline_git_is_the_offline_error_family(monkeypatch):
-    monkeypatch.undo()
-
-    def boom(*a, **k):
-        raise subprocess.TimeoutExpired("git", 1)
-
-    monkeypatch.setattr(subprocess, "run", boom)
-    try:
-        cli._fetch_git_tags("x", 1)
-    except OSError:
-        return
-    raise AssertionError("expected OSError")
+    monkeypatch.setattr(update_check, "fetch_github", fetch)
+    started = cli._start_update_check(["status"])
+    assert update_check.collect(started, timeout=5) == update_check.UpdateAvailable(
+        current=cli.__version__, latest="v9.0.0")
+    assert asked == ["weskao/monitask-center"]
 
 
 def test_toggle_off_starts_nothing():
@@ -49,7 +37,7 @@ def test_exec_commands_start_nothing():
 def test_hint_goes_to_stderr_and_skips(capsys):
     assert cli._hint_update(FOUND) == update_check.SKIP
     err = capsys.readouterr().err
-    assert "v1.1.0" in err and "git pull" in err
+    assert "v1.1.0" in err and "git+https://github.com/weskao/monitask-center.git@v1.1.0" in err
 
 
 def _prompt(monkeypatch, keys):

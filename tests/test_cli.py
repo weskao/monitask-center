@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from monitask_center import cli, config, i18n, install, status, workday
+from monitask_center import cli, config, i18n, install, status, update_check, workday
 from monitask_center.i18n import t
 from monitask_center.tui import menu
 
@@ -50,7 +50,7 @@ def test_engine_commands_exec_run_sh(monkeypatch, cmd):
     calls = []
     monkeypatch.setattr(os, "execv", lambda path, args: calls.append((path, args)))
     assert cli.main([cmd]) == 1  # patched exec "returns", as a real failed exec would
-    assert calls == [("/bin/bash", ["/bin/bash", str(config.PROJECT_ROOT / "run.sh"), cmd])]
+    assert calls == [("/bin/bash", ["/bin/bash", str(config.RUNNER), cmd])]
 
 
 def test_logs_path_and_tail(monkeypatch, capsys):
@@ -163,9 +163,8 @@ def test_parse_error_prefix_is_localized(capsys):
     assert "error:" not in err and err.startswith(t("cli.usage_prefix"))
 
 
-def test_update_reinstalls_editable_then_syncs_launchd_with_the_new_code():
-    steps = cli._upgrade(None)
-    root = str(config.PROJECT_ROOT)
-    assert steps[0] == ["git", "-C", root, "pull", "--ff-only"]
-    assert steps[1] == ["uv", "tool", "install", "--editable", root, "--force"]  # never a copy in the tool venv
-    assert steps[2][0] == sys.executable and "launchd.sync" in steps[2][-1]
+def test_update_installs_the_release_tag_then_migrates_with_the_new_code():
+    steps = cli._upgrade(update_check.UpdateAvailable(current="1.5.0", latest="v1.6.0"))
+    assert steps[0] == ["uv", "tool", "install", "--force", "--from",
+                        "git+https://github.com/weskao/monitask-center.git@v1.6.0", "monitask-center"]
+    assert steps[1][0] == sys.executable and "install.migrate" in steps[1][-1] and "launchd.sync" in steps[1][-1]
