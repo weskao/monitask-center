@@ -1,6 +1,6 @@
 'use strict';
-// 無頭抓 report 頁的今日活動率，工作時窗內每小時通知。launchd 進入點：run.sh fetch。
-// 參數：force = 略過工作時窗閘門（測試用）。
+// Headlessly fetch today's activity rate from the report page and notify hourly within the work window. launchd entry point: run.sh fetch.
+// Argument: force = skip the work-window gate (for testing).
 const { chromium } = require('playwright');
 const { execFileSync, spawnSync } = require('child_process');
 const os = require('os');

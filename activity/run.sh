@@ -1,11 +1,11 @@
 #!/bin/bash
-# 活動率監控進入點。用法：
-#   ./run.sh login        首次：開有畫面瀏覽器，你本人手動登入 Monitask（存 profile）
-#   ./run.sh fetch        無頭抓一次（工作時窗外會自動略過）— launchd 用這個
-#   ./run.sh fetch force  無頭抓一次並略過時窗閘門（測試用）
+# Entry point for activity-rate monitoring. Usage:
+#   ./run.sh login        first run: open a visible browser and log in to Monitask by hand (saves the profile)
+#   ./run.sh fetch        fetch once headlessly (skipped automatically outside the work window) — used by launchd
+#   ./run.sh fetch force  fetch once headlessly, skipping the window gate (for testing)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-# 優先使用 Homebrew Node，讓 Full Disk Access 授權對應到排程實際執行的程式。
+# Prefer Homebrew Node so the Full Disk Access grant maps to the program the schedule actually runs.
 NODE="${MONITASK_ACTIVITY_NODE:-/opt/homebrew/opt/node/bin/node}"
 [ -x "$NODE" ] || NODE="/usr/local/opt/node/bin/node"
 [ -x "$NODE" ] || NODE="/opt/homebrew/bin/node"
@@ -14,7 +14,7 @@ NODE="${MONITASK_ACTIVITY_NODE:-/opt/homebrew/opt/node/bin/node}"
 [ -x "$NODE" ] || NODE="$(command -v node)"
 [ -x "$NODE" ] || { echo "找不到 node"; exit 1; }
 
-# 載入 Telegram 設定（沿用打卡那份 .env：bot token + 群組 chat_id）
+# Load the Telegram settings (reuses the clock-in .env: bot token + group chat_id)
 [ -f "$HERE/../.env" ] && set -a && . "$HERE/../.env" && set +a
 
 case "${1:-}" in

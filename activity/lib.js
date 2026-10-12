@@ -1,5 +1,5 @@
 'use strict';
-// 共用：台北時間、工作時窗、report URL、活動率解析。
+// Shared: Taipei time, work window, report URL, activity-rate parsing.
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -23,7 +23,7 @@ function taipeiParts() {
 
 function isoOf(y, m, d) { return `${y}-${m}-${d}`; }
 
-// 目前是否在「該通知活動率」的工作時窗；並回報要抓哪一天的 report。
+// Whether we are now inside the work window when the activity rate should be notified, and which day's report to fetch.
 function workWindow() {
   const { year, month, day, hour } = taipeiParts();
   const iso = isoOf(year, month, day);
@@ -55,7 +55,7 @@ function reportUrl(reportDate) {
   return `https://app.monitask.com/report?${params}`;
 }
 
-// 從 report 頁 innerText 解析活動率。回傳 {daily, lastHour, blocks, total, shots}。
+// Parse the activity rate from the report page's innerText. Returns {daily, lastHour, blocks, total, shots}.
 function parseActivity(text) {
   const daily = (text.match(/^\s*(\d+(?:\.\d+)?)\s*%\s*$/m) || [])[1] || null;
   const blocks = [...text.matchAll(/(\d+)\s*%\s*的\s*\d+\s*分/g)].map((x) => +x[1]);

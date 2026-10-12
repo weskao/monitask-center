@@ -1,5 +1,5 @@
 #!/bin/bash
-# install.sh — 活動率監控的 launchd job（每整點觸發，fetch 沿用主程式的設定）。
+# install.sh — launchd job for activity-rate monitoring (fires on the hour; fetch reuses the main program's settings).
 #   ./install.sh install | uninstall | reload | status
 set -euo pipefail
 

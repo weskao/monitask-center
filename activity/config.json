@@ -1,5 +1,5 @@
 {
-  "_comment": "活動率設定。預設使用已登入者自己的報表；個別成員與時區可用 .env 的 MONITASK_ACTIVITY_MEMBER_ID / MONITASK_ACTIVITY_TIMEZONE 覆寫。",
+  "_comment": "Activity-rate settings. Defaults to the logged-in user's own report; the member and timezone can be overridden via MONITASK_ACTIVITY_MEMBER_ID / MONITASK_ACTIVITY_TIMEZONE in .env.",
   "memberId": "",
   "timeOffSet": "Taipei Standard Time",
   "earlyWindow": [

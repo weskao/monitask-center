@@ -1,6 +1,6 @@
 'use strict';
-// 首次登入：開「有畫面」的瀏覽器到 Monitask，由你本人手動登入（密碼你自己打）。
-// 登入成功後 session 存進 profile/，之後 fetch.js 走無頭沿用。
+// First login: open a visible browser to Monitask and log in by hand (type the password yourself).
+// After a successful login the session is saved in profile/, which fetch.js reuses headlessly.
 const { chromium } = require('playwright');
 const { PROFILE_DIR, reportUrl, taipeiParts, fetchActivity } = require('./lib');
 
@@ -14,19 +14,19 @@ const { PROFILE_DIR, reportUrl, taipeiParts, fetchActivity } = require('./lib');
   });
   const page = ctx.pages()[0] || await ctx.newPage();
   console.log('開啟 Monitask… 請在跳出的視窗自行登入（帳號已預填，密碼你自己打）。');
-  // 只導這一次；之後「完全不碰頁面」，純被動偵測——避免把你正在打的字沖掉。
+  // Navigate only once; afterwards never touch the page and only observe passively, so what you are typing is not wiped.
   await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
 
-  const deadline = Date.now() + 10 * 60 * 1000; // 最多等 10 分鐘
+  const deadline = Date.now() + 10 * 60 * 1000; // wait at most 10 minutes
   let ok = false;
-  // 第一階段：等你登入（網址離開 /identity/login 即代表登入成功）。期間不做任何導頁。
+  // Phase 1: wait for you to log in (leaving /identity/login means success). No navigation in the meantime.
   while (Date.now() < deadline) {
     let curUrl = '';
     try { curUrl = page.url(); } catch (e) {}
     if (curUrl && !/\/identity\/login/i.test(curUrl)) { ok = true; break; }
     await page.waitForTimeout(2000);
   }
-  // 第二階段：登入成功後直接驗證報表資料，不再等待頁面渲染。
+  // Phase 2: after login, verify the report data directly without waiting for the page to render.
   if (ok) {
     try {
       const a = await fetchActivity(ctx.request, `${month}/${day}/${year}`);
