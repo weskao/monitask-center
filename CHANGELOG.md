@@ -1,3 +1,19 @@
+## [1.5.0] - 2026-10-12
+
+### 🚀 Features
+
+- Add Node.js support for activity rate notifications
+- **overtime:** Ask at 18:30 whether to stop timing
+
+### 🐛 Bug Fixes
+
+- **activity:** Read authenticated report data
+- **install:** Run the checkout, not a stale venv copy
+- **launchd:** Install jobs added by an upgrade
+
+### 📚 Documentation
+
+- Require upgrade migrations for each release
 ## [1.4.0] - 2026-10-08
 
 ### 🚀 Features
