@@ -1,3 +1,17 @@
+## [1.6.0] - 2026-10-12
+
+### 🚀 Features
+
+- Install runtime without a checkout
+
+### 🚜 Refactor
+
+- Set comments to english
+
+### 📚 Documentation
+
+- Add setup and telegram screenshots
+- Add config menu screenshot
 ## [1.5.0] - 2026-10-12
 
 ### 🚀 Features
