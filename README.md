@@ -2,6 +2,18 @@
 
 跑在 **launchd 背景**的 Monitask 工時檢查器(會在固定時機自動播放/暫停)(不是 Claude skill,不需開 Claude)。由 `uv tool` 安裝的 `monitask-center` 指令管理，設定用互動選單 `monitask-center --config`。
 
+**它做什麼：** 工作日的整點檢查 Monitask 有沒有在計時，忘了開就自動按播放(午休自動暫停、下班詢問後停止)，並用 Telegram 通知你結果；另有選用的活動率報表，定時推送今日活動率。
+
+**快速開始：** 見[首次設定](#首次設定)。
+
+### 設定選單 `monitask-center --config`
+
+![monitask-center --config 設定選單](docs/images/config-menu.jpeg)
+
+### Telegram 活動率通知(選用)
+
+![Telegram 活動率通知](docs/images/telegram-notification.jpeg)
+
 ## 核心原則
 
 **平常只監看，只在兩個固定時機按播放/暫停。**
@@ -150,6 +162,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | `src/monitask_center/tui/` | `--config` 選單：`menu.py`、`present.py`、`keyreader.py`、`logo.py`(兩種尺寸的標題 logo) |
 | `src/monitask_center/locales/<lang>/*.json` | 各語言文字(目前 `zh-TW`) |
 | `tests/` | pytest 測試(含 i18n 守門) |
+| `docs/images/` | README 用的截圖：`config-menu.jpeg`(設定選單)、`telegram-notification.jpeg`(活動率通知) |
 | `activity/` | 活動率監控，**獨立的選用功能**，有自己的 launchd job；讀主設定時使用 `~/Library/Application Support/MonitaskCenter/` 的 python 與 `pylibs` |
 | `.env` | 活動率監控的設定(`activity/run.sh` 讀取，不入版控) |
 | `~/.monitask-center/.env` | 僅在無認證存放區時的後備：`TG_BOT_TOKEN` + `TG_CHAT_ID` |
