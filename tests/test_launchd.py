@@ -60,6 +60,27 @@ def test_sync_lunch_change_no_drift_hour_change_drifts_only_check(calls):
     assert "reload" not in launchd.sync_message("reinstalled", ["check"])  # catalog resolved, not key
 
 
+def test_install_missing_adds_only_jobs_without_a_plist(calls):
+    assert launchd.install_missing(Settings()) is None  # nothing installed: not ours to install
+    launchd.install(Settings(), ["check"])  # what "Update now" from 1.4.0 leaves behind
+    calls.clear()
+    note = launchd.install_missing(Settings(start_hour=9))  # check is stale too, but must stay loaded
+    assert "overtime" in note and launchd.plist_path("overtime").exists()
+    assert {c[-1] for c in calls} == {str(launchd.plist_path("overtime"))}
+    calls.clear()
+    assert launchd.install_missing(Settings()) is None and calls == []
+
+
+def test_install_missing_failure_is_a_message(calls, monkeypatch):
+    launchd.install(Settings(), ["check"])
+
+    def fail(*_a, **_k):
+        raise launchd.LaunchdError(5, ["launchctl"], "Bootstrap failed")
+
+    monkeypatch.setattr(launchd, "install", fail)
+    assert "Bootstrap failed" in launchd.install_missing(Settings())
+
+
 def test_install_removes_legacy_plists(calls):
     launchd.agents_dir().mkdir(parents=True)
     legacy = [launchd.plist_path(j, p)

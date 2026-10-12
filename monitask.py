@@ -33,7 +33,7 @@ import ApplicationServices as AX
 from Foundation import NSDate, NSRunLoop
 import Quartz
 
-from monitask_center import check, config, i18n, notify, workday
+from monitask_center import check, config, i18n, launchd, notify, workday
 from monitask_center.status import action_text, reason_text, state_text
 from monitask_center.i18n import t
 
@@ -207,6 +207,8 @@ def cmd_check() -> int:
     os.environ["MONITASK_CENTER_LOG_STDOUT"] = "1"  # launchd stdout keeps its lines
     settings = config.load()
     i18n.set_language(settings.language)
+    if note := launchd.install_missing(settings):  # hourly, so an upgrade gets its new jobs unattended
+        notify.log(note)
     hour = datetime.now().hour
     # Pure window gate first: no calendar access (download / warning) and no state read.
     action = check.decide(hour, settings, (True, "workday"), "timing")

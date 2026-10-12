@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import __version__, config, i18n, install, status, update_check
+from . import __version__, config, i18n, install, launchd, status, update_check
 from .i18n import t
 
 COMMANDS = ("install", "uninstall", "status", "plan", "check", "dump-windows", "logs")
@@ -206,6 +206,9 @@ def _main(raw: list[str]) -> int:
     i18n.set_language(config.load().language)  # before the parser so --help is localized
     parser = build_parser()
     args = parser.parse_args(raw)
+    if args.command not in ("install", "uninstall", *EXEC_COMMANDS):  # check migrates under launchd
+        if note := launchd.install_missing(config.load()):
+            print(note, file=sys.stderr)
     if args.config:
         return cmd_config()
     match args.command:

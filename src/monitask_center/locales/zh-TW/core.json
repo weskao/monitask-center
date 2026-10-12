@@ -18,6 +18,7 @@
   "launchd.sync.unchanged": "排程無需變更",
   "launchd.err.code": "launchctl 結束碼 {code}",
   "launchd.err.detail": "launchctl 結束碼 {code}:{detail}",
+  "launchd.err.migrate": "補裝新版排程失敗,請執行 monitask-center install:{error}",
   "config.corrupt_saved": "已將損毀的設定檔備份至 {path}",
   "launchd.sync.reinstalled": "已重新載入排程:{jobs}"
 }

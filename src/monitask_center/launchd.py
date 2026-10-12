@@ -174,6 +174,23 @@ def sync(settings: config.Settings) -> tuple[str, list[str]]:
     return "reinstalled", install(settings, stale)
 
 
+def install_missing(settings: config.Settings) -> str | None:
+    """Upgrade migration, run by the new code itself: install jobs a release added that have no plist.
+
+    "Update now" in 1.4.0 and older never synced launchd, so a job added since (overtime) stays
+    uninstalled. A job that has a plist is never booted out, so the running check job is safe.
+    -> a line to log/print when it did something, else None."""
+    if not is_installed():
+        return None
+    missing = [job for job in JOBS if not plist_path(job).exists()]
+    if not missing:
+        return None
+    try:
+        return sync_message("reinstalled", install(settings, missing))
+    except (subprocess.CalledProcessError, OSError) as exc:
+        return t("launchd.err.migrate", error=describe_error(exc))
+
+
 def sync_message(state: str, jobs: list[str]) -> str:
     """User-facing text for the result of sync()."""
     return t(f"launchd.sync.{state}", jobs=", ".join(jobs))
