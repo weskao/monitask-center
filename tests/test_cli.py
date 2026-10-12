@@ -161,3 +161,11 @@ def test_parse_error_prefix_is_localized(capsys):
     err = capsys.readouterr().err
     assert exc.value.code == 2 and t("cli.error", prog="monitask-center", message="") .strip() in err
     assert "error:" not in err and err.startswith(t("cli.usage_prefix"))
+
+
+def test_update_reinstalls_editable_then_syncs_launchd_with_the_new_code():
+    steps = cli._upgrade(None)
+    root = str(config.PROJECT_ROOT)
+    assert steps[0] == ["git", "-C", root, "pull", "--ff-only"]
+    assert steps[1] == ["uv", "tool", "install", "--editable", root, "--force"]  # never a copy in the tool venv
+    assert steps[2][0] == sys.executable and "launchd.sync" in steps[2][-1]

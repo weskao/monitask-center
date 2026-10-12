@@ -221,3 +221,14 @@ def test_play_hours_are_start_and_lunch_end():
     assert Settings().play_hours() == {10, 13}
     assert Settings(lunch_skip=False).play_hours() == {10}
     assert Settings(start_hour=9, lunch_end_hour=14).play_hours() == {9, 14}
+
+def test_project_root_falls_back_to_the_uv_receipt_source(tmp_path):
+    package, prefix, source = tmp_path / "venv-pkg", tmp_path / "venv", tmp_path / "checkout"
+    for d in (package, prefix, source):
+        d.mkdir()
+    (source / "run.sh").write_text("")
+    (prefix / "uv-receipt.toml").write_text(f'requirements = [{{ name = "x", directory = "{source}" }}]\n')
+    assert config.project_root(package, prefix) == source  # non-editable install: package has no run.sh
+    (package / "run.sh").write_text("")
+    assert config.project_root(package, prefix) == package  # editable install wins
+    assert config.project_root(tmp_path / "none", tmp_path / "no-receipt") == tmp_path / "none"

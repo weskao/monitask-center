@@ -151,10 +151,16 @@ def _start_update_check(argv: list[str]) -> update_check.Started | None:
         return None
 
 
-#: What "Update now" runs: pull the editable checkout, then reinstall to refresh the version metadata.
+_SYNC_LAUNCHD = "from monitask_center import config, launchd; launchd.sync(config.load())"
+
+
+#: What "Update now" runs: pull the checkout, reinstall it editable (never a copy in the tool venv, so the
+#: CLI and the launchd runner both run the checkout), then sync launchd in the NEW code so a job added by
+#: the release gets installed. sys.executable is the tool venv's python, which the reinstall just rebuilt.
 def _upgrade(_found: update_check.UpdateAvailable) -> list[list[str]]:
     root = str(config.PROJECT_ROOT)
-    return [["git", "-C", root, "pull", "--ff-only"], ["uv", "tool", "install", "--editable", root, "--force"]]
+    return [["git", "-C", root, "pull", "--ff-only"], ["uv", "tool", "install", "--editable", root, "--force"],
+            [sys.executable, "-c", _SYNC_LAUNCHD]]
 
 
 _RELEASE_NOTES = "https://github.com/weskao/monitask-center/releases/tag/%s"

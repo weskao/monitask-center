@@ -176,3 +176,4 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 - **需要自動播放/暫停時保留 AX 授權** `MonitaskCenter.app`；移除授權不影響狀態讀取與提醒。launchd 一律經 `run.sh` 以 `/bin/bash` 呼叫 bundle 內 python(直接 exec bundle 執行檔會被當 app 啟動而失效)。
 - **brew 升級 `python@3.13`** 可能讓 bundle 內 python 副本連結的 framework 路徑失效：重跑 `monitask-center install` 會重建 runner 並重新簽章；重簽後可能需要重新授予 Accessibility。
 - 修改程式碼不需重新安裝(`--editable`)；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。
+- 一律用 `uv tool install --editable .` 安裝(`make install`)：launchd 與 CLI 都跑 checkout 內的程式，更新(`git pull` 後重新安裝)才會真的換成新版；若誤用非 editable 安裝，`config.PROJECT_ROOT` 會從 `uv-receipt.toml` 找回 checkout，但 CLI 仍是 venv 內的舊副本，請改回 editable。「立即更新」會依序 `git pull`、editable 重新安裝、同步 launchd(新版新增的 job 會自動安裝)。

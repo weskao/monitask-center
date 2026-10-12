@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
 import tempfile
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import date, datetime, timedelta
@@ -16,9 +18,26 @@ from pathlib import Path
 
 from . import i18n
 
-# Editable install (uv tool install --editable .) keeps the package inside the
-# checkout, next to run.sh and MonitaskCenter.app that launchd needs.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+def project_root(package_root: Path, prefix: Path) -> Path:
+    """The checkout holding run.sh and MonitaskCenter.app that launchd needs.
+
+    An editable install (uv tool install --editable .) keeps the package inside it. A plain
+    `uv tool install <dir>` copies the package into the tool venv instead, so fall back to the
+    source directory uv recorded in the venv's receipt."""
+    if (package_root / "run.sh").is_file():
+        return package_root
+    try:
+        receipt = (prefix / "uv-receipt.toml").read_text(encoding="utf-8")
+    except OSError:
+        return package_root
+    for source in re.findall(r'directory\s*=\s*"([^"]+)"', receipt):
+        if (Path(source) / "run.sh").is_file():
+            return Path(source)
+    return package_root
+
+
+PROJECT_ROOT = project_root(Path(__file__).resolve().parents[2], Path(sys.prefix))
 RUNNER = PROJECT_ROOT / "run.sh"
 DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d")
 MAX_RANGE_DAYS = 366
