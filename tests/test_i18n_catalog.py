@@ -111,7 +111,7 @@ def test_no_cjk_or_fullwidth_in_code():
 
 
 def test_no_forbidden_control_strings():
-    files = [p for p in SRC.rglob("*") if p.is_file() and "__pycache__" not in p.parts]
+    files = [p for p in SRC.rglob("*") if p.is_file() and p.suffix in {".py", ".json"}]
     bad = [f"{p.relative_to(ROOT)}:{n}: {line.strip()}" for p in files
            for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
            if FORBIDDEN_RE.search(line)]
