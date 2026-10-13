@@ -122,10 +122,21 @@ def test_read_state_invalid_latest_period_is_unknown(engine, body):
     assert engine._last_error and not engine._last_error.startswith("engine.")
 
 
-def test_read_state_empty_period_directory_is_unknown(engine):
+def test_read_state_empty_period_directory_is_paused(engine):
     (Path.home() / "Library/Application Support/Monitask/Periods").mkdir(parents=True)
-    assert engine.read_state() == "unknown"
-    assert engine._last_error
+    assert engine.read_state() == "paused"
+    assert engine._last_error == ""
+
+
+def test_read_state_ignores_zero_byte_period_leftover(engine):
+    periods = Path.home() / "Library/Application Support/Monitask/Periods"
+    periods.mkdir(parents=True)
+    (periods / "leftover_auto.json").write_text("")
+    assert engine.read_state() == "paused"
+    old = periods / "old.json"
+    old.write_text(json.dumps({"DateLastActive": datetime.now(timezone.utc).isoformat()}))
+    os.utime(old, (1, 1))
+    assert engine.read_state() == "timing"  # the newer 0-byte file does not hide real data
 
 
 def test_read_state_missing_directory_is_unknown(engine):

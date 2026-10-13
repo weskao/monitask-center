@@ -123,10 +123,10 @@ def read_state() -> str:
         return "not-running"
     try:
         periods = Path.home() / "Library/Application Support/Monitask/Periods"
-        latest = max((p for p in periods.iterdir() if p.suffix == ".json"),
-                     key=lambda p: p.stat().st_mtime_ns, default=None)
-        if latest is None:
-            raise ValueError("no period files")
+        stats = ((p.stat(), p) for p in periods.iterdir() if p.suffix == ".json")
+        _, latest = max(((st.st_mtime_ns, p) for st, p in stats if st.st_size), default=(0, None))
+        if latest is None:  # Monitask deletes uploaded periods: none open (or only 0-byte leftovers) = not timing
+            return "paused"
         data = json.loads(latest.read_text(encoding="utf-8"))
         active = datetime.fromisoformat(data["DateLastActive"].replace("Z", "+00:00"))
         if active.utcoffset() is None:
