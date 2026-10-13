@@ -1,3 +1,18 @@
+## [1.6.1] - 2026-10-13
+
+### 🐛 Bug Fixes
+
+- **update:** Match config menu cursor handling
+- **engine:** Treat empty/zero-byte periods dir as paused
+
+### 📚 Documentation
+
+- Explain setting workdays and vacation
+- Clarify supported operating systems
+
+### 🧪 Testing
+
+- **i18n:** Skip binary files in control-string scan
 ## [1.6.0] - 2026-10-12
 
 ### 🚀 Features
