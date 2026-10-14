@@ -1,3 +1,8 @@
+## [1.6.2] - 2026-10-14
+
+### 🐛 Bug Fixes
+
+- **overtime:** Notify every dialog outcome
 ## [1.6.1] - 2026-10-13
 
 ### 🐛 Bug Fixes
