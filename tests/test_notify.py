@@ -106,6 +106,24 @@ def test_send_failure_falls_back_and_success_does_not(monkeypatch, macos):
     assert macos == ["m"]  # delivered via telegram, no fallback
 
 
+@pytest.mark.parametrize("configured,explicit,expected", [
+    ("-10001", "", "-10001"),
+    ("-10001", "-10002", "-10002"),
+    ("", "", "-10003"),
+])
+def test_notification_routes_to_configured_chat_before_env(monkeypatch, macos, configured, explicit, expected):
+    config.save(config.Settings(telegram_chat_id=configured))
+    monkeypatch.setenv("TG_CHAT_ID", "-10003")
+    monkeypatch.setattr(telegram, "token", lambda: "123:test-token")
+    monkeypatch.setattr(telegram, "send", telegram._real_send)
+    sent = []
+    monkeypatch.setattr(telegram.telegram_kit, "send_message",
+                        lambda token, chat, text: sent.append((chat, text)) or True)
+    notify.notify("decision", chat_id=explicit)
+    assert sent == [(expected, "decision\n🖥️ host")]
+    assert macos == []
+
+
 def test_send_never_raises_into_notify(monkeypatch, macos):
     def boom(text, chat_id=""):
         raise RuntimeError("kaput")

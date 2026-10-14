@@ -442,19 +442,40 @@ def test_overtime_timing_and_no_answer_pauses(overtime):
     assert overtime.cmd_overtime() == 0
     assert overtime.presses == [False] and overtime.waits == []
     assert len(overtime.sent) == 2  # the notice, then the pause result
+    assert overtime.sent[-1] == ("Monitask 已停止計時(下班詢問逾時未回應)", True)
 
 
 def test_overtime_stop_pauses(overtime):
     overtime.answers.append("stop")
     overtime.cmd_overtime()
     assert overtime.presses == [False]
+    assert overtime.sent[-1] == ("Monitask 已停止計時(選擇停止計時)", True)
 
 
-def test_overtime_continue_asks_again_after_30_minutes_then_pauses(overtime):
+@pytest.mark.parametrize("telegram", [True, False])
+def test_overtime_continue_asks_again_after_30_minutes_then_pauses(overtime, telegram):
+    from monitask_center import config
+    config.save(config.Settings(telegram=telegram))
     overtime.answers += ["continue", ""]
     overtime.cmd_overtime()
     assert overtime.waits == [1800] and overtime.presses == [False]
-    assert len(overtime.sent) == 2  # one notice only, not one per round
+    assert len(overtime.sent) == 3  # notice, continue decision, then pause result
+    assert overtime.sent[1] == ("已選擇「繼續加班」，未變更 Monitask 計時狀態，30 分鐘後再問", telegram)
+    assert overtime.sent[-1] == ("Monitask 已停止計時(下班詢問逾時未回應)", telegram)
+
+
+@pytest.mark.parametrize("answer,reason", [("stop", "選擇停止計時"), ("", "下班詢問逾時未回應")])
+@pytest.mark.parametrize("state", ["paused", "not-running", "unknown"])
+def test_overtime_reports_decision_when_timer_changes_during_dialog(overtime, answer, reason, state):
+    overtime.answers.append(answer)
+    states = iter(["timing", state])
+    overtime.read_state = lambda: next(states)
+    overtime.cmd_overtime()
+    assert overtime.presses == []
+    assert len(overtime.sent) == 2
+    assert reason in overtime.sent[-1][0]
+    assert overtime.state_text(state) in overtime.sent[-1][0]
+    assert "未執行自動暫停" in overtime.sent[-1][0]
 
 
 @pytest.mark.parametrize("state", ["paused", "not-running", "unknown"])
@@ -470,6 +491,7 @@ def test_overtime_stops_asking_when_paused_by_hand_during_the_wait(overtime):
     overtime.read_state = lambda: next(states)
     overtime.cmd_overtime()
     assert overtime.presses == []
+    assert "未變更 Monitask 計時狀態" in overtime.sent[-1][0]
 
 
 def test_overtime_pause_failure_is_reported(overtime):

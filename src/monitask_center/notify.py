@@ -75,7 +75,7 @@ def telegram_message(message: str, chat_id: str = "") -> bool:
     Credentials come from :func:`monitask_center.telegram.send`, so a token saved through
     ``--config`` and one left in ``.env`` are both honoured, in that order.
     """
-    return telegram.send(message, chat_id)
+    return telegram.send(message, chat_id or config.load().telegram_chat_id)
 
 
 def notify(message: str, use_telegram: bool = True, chat_id: str = "") -> None:

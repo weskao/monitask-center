@@ -276,12 +276,15 @@ def cmd_overtime() -> int:
             asked = True
         answer = ask_overtime()
         if answer == "continue":
-            notify.log(t("overtime.continue", minutes=OVERTIME_RECHECK_S // 60))
+            message = t("overtime.continue", minutes=OVERTIME_RECHECK_S // 60)
+            notify.log(message)
+            notify.notify(message, settings.telegram)
             time.sleep(OVERTIME_RECHECK_S)
             continue
-        if (state := read_state()) not in check.QUIET_STATES:  # stopped by hand meanwhile
-            break
         why = t("overtime.why_stop" if answer == "stop" else "overtime.why_timeout")
+        if (state := read_state()) not in check.QUIET_STATES:  # stopped by hand meanwhile
+            notify.notify(t("overtime.no_pause", why=why, state=state_text(state)), settings.telegram)
+            break
         notify.log(why)
         ok = _try_set_playing(False)
         notify.notify(t("overtime.paused" if ok else "overtime.pause_failed", why=why), settings.telegram)
