@@ -1,3 +1,8 @@
+## [1.6.3] - 2026-10-15
+
+### 🐛 Bug Fixes
+
+- **engine:** Infer timing state from DateEnd
 ## [1.6.2] - 2026-10-14
 
 ### 🐛 Bug Fixes
