@@ -98,24 +98,24 @@ def test_read_state_uses_latest_period_without_accessibility(engine, timestamp, 
 
     engine.datetime = Clock
     old = periods / "z-old.json"
-    old.write_text(json.dumps({"DateLastActive": "2026-01-02T11:59:59.1234567Z"}))
+    old.write_text(json.dumps({"DateEnd": "2026-01-02T11:59:59.1234567Z"}))
     os.utime(old, (1, 1))
     latest = periods / "a-latest.json"
-    latest.write_text(json.dumps({"DateLastActive": timestamp,
-                                  "DateEnd": now.isoformat()}))
+    latest.write_text(json.dumps({"DateLastActive": "2026-01-02T11:50:00Z",
+                                  "DateEnd": timestamp}))
     assert engine.read_state() == expected
     assert engine._last_error == ""
 
 
-@pytest.mark.parametrize("body", ['{', '[]', '{}', '{"DateLastActive": null}',
-                                  '{"DateLastActive": "invalid"}',
-                                  '{"DateLastActive": "2026-01-02T12:00:00"}',
-                                  '{"DateLastActive": "2999-01-01T00:00:00Z"}'])
+@pytest.mark.parametrize("body", ['{', '[]', '{}', '{"DateEnd": null}',
+                                  '{"DateEnd": "invalid"}',
+                                  '{"DateEnd": "2026-01-02T12:00:00"}',
+                                  '{"DateEnd": "2999-01-01T00:00:00Z"}'])
 def test_read_state_invalid_latest_period_is_unknown(engine, body):
     periods = Path.home() / "Library/Application Support/Monitask/Periods"
     periods.mkdir(parents=True)
     old = periods / "old.json"
-    old.write_text(json.dumps({"DateLastActive": datetime.now(timezone.utc).isoformat()}))
+    old.write_text(json.dumps({"DateEnd": datetime.now(timezone.utc).isoformat()}))
     os.utime(old, (1, 1))
     (periods / "period.json").write_text(body)
     assert engine.read_state() == "unknown"
@@ -134,7 +134,7 @@ def test_read_state_ignores_zero_byte_period_leftover(engine):
     (periods / "leftover_auto.json").write_text("")
     assert engine.read_state() == "paused"
     old = periods / "old.json"
-    old.write_text(json.dumps({"DateLastActive": datetime.now(timezone.utc).isoformat()}))
+    old.write_text(json.dumps({"DateEnd": datetime.now(timezone.utc).isoformat()}))
     os.utime(old, (1, 1))
     assert engine.read_state() == "timing"  # the newer 0-byte file does not hide real data
 
@@ -219,7 +219,7 @@ def test_cmd_check_locked_screen_does_no_ui_work(routed):
 def test_status_prints_key_values(engine, capsys):
     periods = Path.home() / "Library/Application Support/Monitask/Periods"
     periods.mkdir(parents=True)
-    (periods / "period.json").write_text(json.dumps({"DateLastActive": datetime.now(timezone.utc).isoformat()}))
+    (periods / "period.json").write_text(json.dumps({"DateEnd": datetime.now(timezone.utc).isoformat()}))
     engine.cmd_status()
     out = dict(line.split("=") for line in capsys.readouterr().out.split())
     assert out == {"accessibility_trusted": "True", "running": "True",

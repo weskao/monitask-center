@@ -22,8 +22,8 @@
 
 - 只會按 Monitask 的「播放」或「暫停」，且只有 `check.decide()` 判定需要時才按：沒有 Dock 點擊、不自動回應彈窗、不關閉 App。App 沒開或視窗被隱藏時，才會 `open -a Monitask` 並等待控制項出現(最長 30 秒)，按下後輪詢確認狀態真的改變。
 - 離座不補點、不偽造工時，也沒有 F13 / 合成輸入 / 補活動。
-- 狀態讀取集中在 `engine.py` 的 `read_state()`：先確認 App 是否執行，再讀 `~/Library/Application Support/Monitask/Periods/` 中最後修改的非空 JSON；`DateLastActive` 距今小於 180 秒視為 `timing`，否則為 `paused`。Monitask 上傳後會刪除 Period 檔，所以目錄內沒有非空 JSON(只剩 0 位元組殘檔或為空)也視為 `paused`。不需 Accessibility(AX)權限；自動播放/暫停仍透過 `set_playing()` 使用 AX，並以按鈕狀態即時確認結果。
-- 180 秒是暫定門檻(`PERIOD_MAX_AGE_S`)；檔案約每分鐘更新，暫停後最多約 3 分鐘才會辨識為 `paused`。尚待實際暫停觀察校準；`DateLastActive` 反映活動時間，不能保證等同計時器即時狀態。
+- 狀態讀取集中在 `engine.py` 的 `read_state()`：先確認 App 是否執行，再讀 `~/Library/Application Support/Monitask/Periods/` 中最後修改的非空 JSON；`DateEnd` 距今小於 180 秒視為 `timing`，否則為 `paused`。`DateEnd` 隨計時持續推進；`DateLastActive` 只反映最後操作時間，閒置時仍可能正在計時，因此不作為暫停依據。Monitask 上傳後會刪除 Period 檔，所以目錄內沒有非空 JSON(只剩 0 位元組殘檔或為空)也視為 `paused`。不需 Accessibility(AX)權限；自動播放/暫停仍透過 `set_playing()` 使用 AX，並以按鈕狀態即時確認結果。
+- 180 秒是暫定門檻(`PERIOD_MAX_AGE_S`)；檔案約每分鐘更新，暫停後最多約 3 分鐘才會辨識為 `paused`。尚待實際暫停觀察校準；此判定仍是檔案時間推估，不能保證等同計時器即時狀態。
 
 ## 每個工作日會發生什麼
 

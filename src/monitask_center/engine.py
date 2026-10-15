@@ -128,13 +128,14 @@ def read_state() -> str:
         if latest is None:  # Monitask deletes uploaded periods: none open (or only 0-byte leftovers) = not timing
             return "paused"
         data = json.loads(latest.read_text(encoding="utf-8"))
-        active = datetime.fromisoformat(data["DateLastActive"].replace("Z", "+00:00"))
-        if active.utcoffset() is None:
+        end = datetime.fromisoformat(data["DateEnd"].replace("Z", "+00:00"))
+        if end.utcoffset() is None:
             raise ValueError("timestamp has no timezone")
-        age = (datetime.now(timezone.utc) - active).total_seconds()
+        age = (datetime.now(timezone.utc) - end).total_seconds()
         if age < 0:
             raise ValueError("timestamp is in the future")
-        # ponytail: freshness infers timing with up to 3 min pause lag; use a direct signal if available.
+        # DateEnd advances while timing; DateLastActive only advances on user input.
+        # shortcut: freshness has up to 3 min pause lag, use a direct signal when available.
         return "timing" if age < PERIOD_MAX_AGE_S else "paused"
     except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         _last_error = t("engine.period_error", error=type(exc).__name__)
