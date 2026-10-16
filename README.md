@@ -141,6 +141,7 @@ bash activity/install.sh install
 | `monitask-center dump-windows` | 印出 Monitask 視窗與按鈕結構(診斷用) |
 | `monitask-center logs` | 追蹤日誌；`logs --path` 只印出路徑 |
 | `monitask-center config` | 等同 `monitask-center --config` |
+| `monitask-center update` | 更新到最新的發行版本標籤；`--update` 相同(見「檢查更新」) |
 
 Makefile 只是薄包裝：
 
@@ -162,7 +163,22 @@ make help        # 列出全部
 - 互動終端機：顯示選單 — 立即更新(`uv tool install --force --from git+https://github.com/weskao/monitask-center.git@<新版標籤> monitask-center`，裝的是該版本標籤而非 `main`，再用新版程式同步執行環境與 launchd)、略過(下次再問)、略過到下一版。
 - 管線或非 TTY：只在 stderr 印一行提示，不阻塞。
 
-`check`、`dump-windows`、`logs` 與 launchd 排程不做檢查。離線或查詢失敗時靜默略過。
+`check`、`dump-windows`、`logs`、`update` 與 launchd 排程不做檢查。離線或查詢失敗時靜默略過。
+
+### 手動更新：`monitask-center update`
+
+`monitask-center update`(或 `monitask-center --update`)一定會停在最新的發行版本標籤，不看 TTL 快取、也不受「檢查更新」開關與「略過到下一版」影響：
+
+- 只有「執行中的版本等於最新標籤」**且**「安裝來源就是該標籤」(PEP 610 `direct_url.json` 的 `requested_revision`；沒有這份紀錄時以版本為準)才算最新，印出 `✅ … 已是最新版本` 後結束，不安裝任何東西。
+- 其餘情況(舊版、比標籤新的版本、從 `main` 或某個 commit 安裝、從本機 checkout / editable 安裝)都會執行與「立即更新」完全相同的步驟：`uv tool install --force --from git+…@<標籤>`，再用新版程式同步執行環境與 launchd。從本機 checkout 安裝時會額外提示 checkout 本身沒有變動。
+- 結束時不會再跳出指令後的更新詢問。
+- 不接受其他參數：`update --help`、`update foo` 一律拒絕，不會安裝。
+
+| 結束碼 | 意義 |
+|------|------|
+| `0` | 已是最新，或已更新到最新標籤 |
+| `1` | 查不到最新版本(離線 / GitHub API 限流)，或安裝 / 同步步驟失敗(會印出手動指令) |
+| `2` | 帶了多餘的參數 |
 
 ## launchd 排程
 

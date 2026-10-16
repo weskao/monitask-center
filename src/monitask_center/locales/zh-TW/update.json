@@ -9,5 +9,11 @@
   "update.skip_version_detail": "有新版本推出後才會再詢問",
   "update.notes": "版本說明:{url}",
   "update.keys": "↑↓ 選擇 · ⏎ 確認 · q/Ctrl+C 略過",
-  "update.failed": "更新沒有完成 — 請自行執行:uv tool install --force --from {source} monitask-center,再執行 monitask-center status"
+  "update.failed": "更新沒有完成 — 請自行執行:uv tool install --force --from {source} monitask-center,再執行 monitask-center status",
+  "update.cmd.offline": "❌ 無法檢查最新版本(離線或 GitHub API 限流),請稍後再試",
+  "update.cmd.latest": "✅ monitask-center {current} 已是最新版本({latest})。",
+  "update.cmd.updating": "⬆️  正在更新 monitask-center {current} → {latest}:`{command}` ...",
+  "update.cmd.done": "🎉 monitask-center 已更新到 {latest}!",
+  "update.cmd.local": "ℹ️  已改以 uv tool 安裝;{path} 的副本沒有變動。",
+  "update.cmd.failed": "❌ 更新沒有完成 — 請自行執行:{command},再執行 monitask-center status"
 }

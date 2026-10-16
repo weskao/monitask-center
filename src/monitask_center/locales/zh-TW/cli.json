@@ -9,6 +9,7 @@
   "cli.help.dump-windows": "列出 Monitask 視窗與按鈕(診斷用)",
   "cli.help.logs": "追蹤日誌檔",
   "cli.help.logs_path": "只印出日誌檔路徑",
+  "cli.help.update": "更新到最新的發行版本標籤(同 --update;不接受其他參數)",
   "cli.plan.runs": "實際執行",
   "cli.plan.none": "無",
   "cli.logs.missing": "找不到日誌檔:{path}",

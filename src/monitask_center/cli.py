@@ -4,23 +4,30 @@ from __future__ import annotations
 
 import argparse
 import functools
+import json
 import os
+import subprocess
 import sys
 from datetime import datetime
+from importlib import metadata
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from . import __version__, config, i18n, install, launchd, status, update_check
 from .i18n import t
 
-COMMANDS = ("install", "uninstall", "status", "plan", "check", "dump-windows", "logs")
+COMMANDS = ("install", "uninstall", "status", "plan", "check", "dump-windows", "logs", "update")
 EXEC_COMMANDS = ("check", "dump-windows", "logs")  # replace this process (or run under launchd): no update check
 REPO = "weskao/monitask-center"  # public: releases come from the unauthenticated GitHub API
 
 
 def _normalize_argv(argv: list[str]) -> list[str]:
-    """`monitask-center config` == `monitask-center --config`."""
+    """`monitask-center config` == `monitask-center --config`; `--update` == `update`."""
     if argv and argv[0] == "config":
         return ["--config", *argv[1:]]
+    if argv and argv[0] == "--update":
+        return ["update", *argv[1:]]
     return argv
 
 
@@ -54,7 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     for name in COMMANDS:
         sp = sub.add_parser(name, help=t(f"cli.help.{name}"), description=t(f"cli.help.{name}"),
                             allow_abbrev=False, add_help=False, formatter_class=_Formatter)
-        sp.add_argument("-h", "--help", action="help", help=t("cli.help.help"))
+        if name != "update":  # `update` takes no arguments at all: `update --help` must not install
+            sp.add_argument("-h", "--help", action="help", help=t("cli.help.help"))
         if name == "logs":
             sp.add_argument("--path", action="store_true", help=t("cli.help.logs_path"))
     return p
@@ -125,7 +133,7 @@ def _update_cache_path() -> Path:
 def _start_update_check(argv: list[str]) -> update_check.Started | None:
     """Kick off the release check in the background so it overlaps the command."""
     try:
-        if (argv[:1] and argv[0] in EXEC_COMMANDS) or not config.load().update_check:
+        if (argv[:1] and argv[0] in (*EXEC_COMMANDS, "update")) or not config.load().update_check:
             return None
         return update_check.start(REPO, __version__, cache_path=_update_cache_path(),
                                   fetch=update_check.fetch_github)
@@ -180,6 +188,47 @@ def _offer_update(started: update_check.Started | None) -> None:
         print(t("update.failed", source=_install_source(found.latest if found else "vX.Y.Z")), file=sys.stderr)
 
 
+def _direct_url() -> dict | None:
+    """PEP 610 record of how this install was made (VCS ref, local dir), or None (index/unknown)."""
+    try:
+        data = json.loads(metadata.distribution("monitask-center").read_text("direct_url.json") or "null")
+    except (metadata.PackageNotFoundError, OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def cmd_update() -> int:
+    """Always end on the newest release tag: what "Update now" runs, unless already installed from it."""
+    try:
+        latest = update_check._latest_from_body(update_check.fetch_github(REPO, 10))
+    except (OSError, ValueError):  # URLError and timeouts are OSErrors
+        latest = None
+    if not latest:
+        print(t("update.cmd.offline"), file=sys.stderr)
+        return 1
+    direct = _direct_url()
+    # No record = an index install: trust the version. A VCS install counts only when pinned to this tag.
+    pinned = direct is None or (direct.get("vcs_info") or {}).get("requested_revision") == latest
+    if pinned and __version__ == latest.removeprefix("v"):
+        print(t("update.cmd.latest", current=__version__, latest=latest))
+        return 0
+    steps = _upgrade(update_check.UpdateAvailable(current=__version__, latest=latest))
+    command = " ".join(steps[0])
+    print(t("update.cmd.updating", current=__version__, latest=latest, command=command), flush=True)
+    for step in steps:  # same as update_check.offer's UPDATE_NOW: stop at the first failure
+        try:
+            ok = subprocess.run(step, check=False).returncode == 0
+        except OSError:
+            ok = False
+        if not ok:
+            print(t("update.cmd.failed", command=command), file=sys.stderr)
+            return 1
+    print(t("update.cmd.done", latest=latest))
+    if direct and "dir_info" in direct:
+        print(t("update.cmd.local", path=url2pathname(urlparse(direct.get("url", "")).path)))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """The update check starts first and is offered last, whichever way the command exits."""
     raw = _normalize_argv(list(sys.argv[1:] if argv is None else argv))
@@ -215,5 +264,7 @@ def _main(raw: list[str]) -> int:
             return cmd_plan()
         case "logs":
             return cmd_logs(args.path)
+        case "update":
+            return cmd_update()
         case cmd:  # check, dump-windows: the read-only AX engine runs under run.sh
             return _exec("/bin/bash", ["/bin/bash", str(config.RUNNER), cmd])
