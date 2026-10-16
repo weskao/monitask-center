@@ -1,3 +1,12 @@
+## [1.7.0] - 2026-10-16
+
+### 🚀 Features
+
+- **cli:** Add `update` / `--update` command
+
+### 🐛 Bug Fixes
+
+- **update:** End the migration notice with a newline
 ## [1.6.3] - 2026-10-15
 
 ### 🐛 Bug Fixes
