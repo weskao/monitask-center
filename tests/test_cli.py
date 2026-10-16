@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from monitask_center import cli, config, i18n, install, status, update_check, workday
+from monitask_center import cli, config, i18n, install, launchd, status, update_check, workday
 from monitask_center.i18n import t
 from monitask_center.tui import menu
 
@@ -168,3 +168,15 @@ def test_update_installs_the_release_tag_then_migrates_with_the_new_code():
     assert steps[0] == ["uv", "tool", "install", "--force", "--from",
                         "git+https://github.com/weskao/monitask-center.git@v1.6.0", "monitask-center"]
     assert steps[1][0] == sys.executable and "install.migrate" in steps[1][-1] and "launchd.sync" in steps[1][-1]
+
+
+def test_update_migrate_message_ends_its_line(monkeypatch, capsys):
+    # The next line ("🎉 ...updated") must not be glued onto the migration notice.
+    monkeypatch.setattr(config, "load", lambda: None)
+    monkeypatch.setattr(install, "migrate", lambda s: "moved")
+    monkeypatch.setattr(launchd, "sync", lambda s: None)
+    exec(cli._MIGRATE, {})
+    assert capsys.readouterr().out == "moved\n"
+    monkeypatch.setattr(install, "migrate", lambda s: None)
+    exec(cli._MIGRATE, {})
+    assert capsys.readouterr().out == ""

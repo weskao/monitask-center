@@ -144,7 +144,7 @@ def _start_update_check(argv: list[str]) -> update_check.Started | None:
 #: Runs in the NEW code after the reinstall: move/refresh the launchd runtime (run.sh embeds the
 #: package path, which a new tool venv can change), then install jobs a release added or changed.
 _MIGRATE = ("from monitask_center import config, install, launchd; s = config.load(); "
-            "print(install.migrate(s) or '', end=''); launchd.sync(s)")
+            "m = install.migrate(s); m and print(m); launchd.sync(s)")
 
 
 #: What "Update now" runs: reinstall the CLI from the release tag (no clone needed, never main's
