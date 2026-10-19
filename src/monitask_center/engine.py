@@ -152,6 +152,8 @@ def set_playing(playing: bool) -> bool:
     Opens Monitask first when it is closed or hiding its window (it hides while timing), once,
     then waits up to LAUNCH_TIMEOUT_S for the two controls. Raises RuntimeError if AX is untrusted."""
     if not AX.AXIsProcessTrusted():
+        # A rebuilt ad-hoc runner no longer matches its old grant; the prompt lists the current one.
+        AX.AXIsProcessTrustedWithOptions({AX.kAXTrustedCheckOptionPrompt: True})
         raise RuntimeError(t("engine.ax_untrusted", path=os.path.realpath(sys.executable)))
     deadline = time.monotonic() + LAUNCH_TIMEOUT_S
     opened = False
@@ -196,6 +198,7 @@ def press(action: str, telegram: bool) -> str:
         message = t("check.play_ok") if ok else t("check.play_failed")
     else:
         message = t("check.pause_ok") if ok else t("check.pause_failed")
+    notify.log(message)
     notify.notify(message, telegram)
     return action if ok else f"{action}_failed"
 
@@ -284,11 +287,15 @@ def cmd_overtime() -> int:
             continue
         why = t("overtime.why_stop" if answer == "stop" else "overtime.why_timeout")
         if (state := read_state()) not in check.QUIET_STATES:  # stopped by hand meanwhile
-            notify.notify(t("overtime.no_pause", why=why, state=state_text(state)), settings.telegram)
+            message = t("overtime.no_pause", why=why, state=state_text(state))
+            notify.log(message)
+            notify.notify(message, settings.telegram)
             break
         notify.log(why)
         ok = _try_set_playing(False)
-        notify.notify(t("overtime.paused" if ok else "overtime.pause_failed", why=why), settings.telegram)
+        message = t("overtime.paused" if ok else "overtime.pause_failed", why=why)
+        notify.log(message)
+        notify.notify(message, settings.telegram)
         return 0
     notify.log(t("overtime.not_timing", state=state_text(state)))
     return 0

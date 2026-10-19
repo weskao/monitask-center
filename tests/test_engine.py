@@ -43,6 +43,9 @@ def engine(monkeypatch):
         runningApplications=lambda: world.apps))
     ax = types.ModuleType("ApplicationServices")
     ax.AXIsProcessTrusted = lambda: world.trusted
+    world.prompts = []
+    ax.kAXTrustedCheckOptionPrompt = "AXTrustedCheckOptionPrompt"
+    ax.AXIsProcessTrustedWithOptions = lambda opts: world.prompts.append(opts) or world.trusted
     ax.AXUIElementCreateApplication = lambda pid: Node("AXApplication", windows=world.windows)
     ax.AXUIElementSetMessagingTimeout = lambda el, s: 0
 
@@ -347,6 +350,7 @@ def test_set_playing_without_accessibility_does_not_open_or_press(stage):
     with pytest.raises(RuntimeError):
         stage.set_playing(True)
     assert stage.world.opened == [] and stage.world.pressed == []
+    assert stage.world.prompts == [{"AXTrustedCheckOptionPrompt": True}]  # macOS re-lists the current runner
 
 
 def test_set_playing_gives_up_without_pressing_when_controls_never_appear(stage):
@@ -499,6 +503,16 @@ def test_overtime_pause_failure_is_reported(overtime):
     overtime.answers.append("")
     overtime.cmd_overtime()
     assert overtime.presses == [False] and overtime.sent[-1][0] == _t("overtime.pause_failed", why=_t("overtime.why_timeout"))
+
+
+def test_overtime_stop_outcome_is_logged(overtime, monkeypatch):
+    logged = []
+    monkeypatch.setattr(overtime.notify, "log", logged.append)
+    overtime.world.press_ok = False
+    overtime.answers.append("stop")
+    overtime.cmd_overtime()
+    why = _t("overtime.why_stop")
+    assert logged[-2:] == [why, _t("overtime.pause_failed", why=why)]
 
 
 @pytest.mark.parametrize("setup", ["disabled", "holiday", "locked"])
