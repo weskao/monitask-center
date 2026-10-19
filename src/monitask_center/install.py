@@ -14,6 +14,7 @@ import getpass
 import io
 import os
 import plistlib
+import re
 import shlex
 import shutil
 import subprocess
@@ -38,8 +39,14 @@ ENV_KEYS = telegram.ENV_KEYS
 #: the tool venv's site-packages otherwise. run.sh puts it on PYTHONPATH.
 PACKAGE_PARENT = Path(__file__).resolve().parent.parent
 # Bundle id = the TCC identity the Accessibility grant belongs to; never change it.
+BUNDLE_ID = "com.dannylin.monitask-center"
+TCC_DB = "/Library/Application Support/com.apple.TCC/TCC.db"
+AX_PANE = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+# Shows nothing when already trusted; the short sleep lets macOS register the request first.
+AX_PROMPT = ("import ApplicationServices as AX, time; "
+             "AX.AXIsProcessTrustedWithOptions({AX.kAXTrustedCheckOptionPrompt: True}); time.sleep(10)")
 INFO_PLIST = plistlib.dumps({
-    "CFBundleIdentifier": "com.dannylin.monitask-center",
+    "CFBundleIdentifier": BUNDLE_ID,
     "CFBundleName": "MonitaskCenter",
     "CFBundleExecutable": "python-runner",
     "CFBundlePackageType": "APPL",
@@ -153,6 +160,33 @@ def prepare_runtime(p: Paths) -> None:
     print(t("install.runtime.ok"))
 
 
+def accessibility_granted(p: Paths) -> bool | None:
+    """Whether the Accessibility grant is on and matches the current runner; None if unknowable.
+
+    Asking AX from here would answer for the terminal, not the launchd job, so read TCC.db (needs
+    Full Disk Access). An ad-hoc re-sign changes the cdhash, which silently voids an old grant."""
+    r = _run(["/usr/bin/sqlite3", "-readonly", TCC_DB,
+              f"select auth_value || '|' || hex(csreq) from access where client = '{BUNDLE_ID}' "
+              "and service = 'kTCCServiceAccessibility'"], capture_output=True)
+    sig = _run(["codesign", "-d", "-r-", str(p.app)], capture_output=True)
+    cdhash = re.search(r'cdhash H"([0-9a-f]+)"', (sig.stdout or "") + (sig.stderr or ""))
+    if r.returncode != 0 or not cdhash:
+        return None
+    auth, _, csreq = (r.stdout or "").strip().partition("|")
+    return auth == "2" and cdhash.group(1).upper() in csreq
+
+
+def request_accessibility(p: Paths, stale: bool) -> None:
+    """Clear a stale grant, then start the runner as its own app so macOS lists this build and asks
+    (run from the terminal, the request would be filed under the terminal). Never waits."""
+    if stale:
+        _run(["/usr/bin/tccutil", "reset", "Accessibility", BUNDLE_ID], capture_output=True)
+    _run(["/usr/bin/open", "-n", str(p.app), "--env", f"PYTHONPATH={p.pylibs}", "--args", "-c", AX_PROMPT],
+         capture_output=True)
+    if stale:
+        _run(["/usr/bin/open", AX_PANE], capture_output=True)
+
+
 def render_runner(p: Paths) -> str:
     """run.sh: launchd's entry point. It must go through this shell wrapper (not launchd exec'ing the
     bundle binary directly): otherwise LaunchServices starts it as an app and the engine never runs;
@@ -262,6 +296,13 @@ def run_install(settings: config.Settings, *, input_fn=input, getpass_fn=getpass
         print(t("install.verify.loaded", mark="✅" if count == total else "❌", count=count, total=total))
         if not installed or count != total:
             raise InstallError(t("install.err.verify"))
+        if settings.auto_play_pause or settings.overtime_prompt:  # never waits or fails the install
+            _say("install.step.accessibility")
+            granted = accessibility_granted(p)
+            if granted is not True:
+                request_accessibility(p, stale=granted is False)
+            print(t({True: "install.ax.ok", False: "install.ax.missing", None: "install.ax.unknown"}[granted],
+                    path=p.app))
     except InstallError as exc:
         print(t("install.error", message=exc), file=sys.stderr)
         return 1

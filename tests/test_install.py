@@ -28,6 +28,7 @@ class FakeSystem:
         self.calls: list[str] = []
         self.deps = False
         self.trusted = True
+        self.tcc_unreadable = False
         self.bootstrap_fails = False
         self.stderr = ""
         self.pip_env: dict = {}
@@ -50,12 +51,19 @@ class FakeSystem:
             self.python.parent.mkdir(parents=True, exist_ok=True)
             self.python.write_text(PYTHON_VERSION)
             self.python.chmod(0o755)
+        elif name == "codesign" and args[0] == "-d":
+            out = '# designated => cdhash H"5cfbbcd9"\n'
         elif name == "codesign":
             self.calls.append("codesign")
+        elif name == "sqlite3":  # TCC.db: the grant row for the current (granted) or an old (stale) build
+            rc = 1 if self.tcc_unreadable else 0
+            out = {True: "2|FADE0C005CFBBCD9\n", "stale": "0|FADE0C00B23F50CE\n"}.get(self.trusted, "")
         elif name == "xattr":
             self.calls.append("xattr")
         elif name == "open":
-            self.calls.append("open")
+            self.calls.append("open-pane" if args[0].startswith("x-apple") else "open")
+        elif name == "tccutil":
+            self.calls.append("tccutil")
         elif name == "launchctl" and args[0] == "bootstrap":
             if self.bootstrap_fails:
                 rc, self.stderr = 5, "Bootstrap failed: 5: Input/output error\nsecond line\n"
@@ -256,17 +264,35 @@ def test_invalid_token_fails_before_launchd(system, tmp_path, capsys):
     assert "not a token" not in capsys.readouterr().err
 
 
-def test_install_without_accessibility_never_prompts_or_opens_settings(system, capsys):
+def test_install_without_accessibility_requests_it_without_waiting(system, capsys):
     system.trusted = False
 
     def unexpected_input(prompt=""):
-        pytest.fail("installation requested an Accessibility grant")
+        pytest.fail("installation waited for the Accessibility grant")
 
     assert run(input_fn=unexpected_input) == 0
     assert system.count("loaded") == len(launchd.JOBS) and launchd.plist_path("check").exists()
-    assert system.count("open") == 0
     captured = capsys.readouterr()
     assert t("install.done") in captured.out and captured.err == ""
+
+
+@pytest.mark.parametrize("trusted,unreadable,key,calls", [
+    (True, False, "install.ax.ok", (0, 0, 0)),
+    ("stale", False, "install.ax.missing", (1, 1, 1)),  # reset, re-list this build, open the pane
+    (False, False, "install.ax.missing", (1, 1, 1)),
+    (True, True, "install.ax.unknown", (0, 1, 0))])  # unknown: only ask; a good grant is never reset
+def test_install_repairs_a_grant_that_does_not_match_the_current_runner(system, capsys, trusted, unreadable,
+                                                                       key, calls):
+    system.trusted, system.tcc_unreadable = trusted, unreadable
+    assert run() == 0  # a missing grant never fails the install
+    assert (system.count("tccutil"), system.count("open"), system.count("open-pane")) == calls
+    out = capsys.readouterr().out
+    assert t(key, path=install.Paths().app) in out and t("install.done") in out
+
+
+def test_install_skips_the_accessibility_check_when_nothing_presses(system, capsys):
+    assert run(Settings(auto_play_pause=False, overtime_prompt=False)) == 0
+    assert t("install.step.accessibility") not in capsys.readouterr().out
 
 
 def test_bootstrap_failure_is_nonzero_without_completion_message(system, capsys):
