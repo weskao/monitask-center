@@ -1,3 +1,16 @@
+## [1.8.0] - 2026-10-19
+
+### 🚀 Features
+
+- **install:** Check and repair accessibility grant
+
+### 🐛 Bug Fixes
+
+- **engine:** Log outcomes and prompt for access
+
+### 📚 Documentation
+
+- Describe the install accessibility check
 ## [1.7.0] - 2026-10-16
 
 ### 🚀 Features
