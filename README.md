@@ -62,7 +62,9 @@ monitask-center install          # 一次完成其餘設定
 
 `X.Y.Z` 換成要安裝的[版本](https://github.com/weskao/monitask-center/releases)；省略 `@vX.Y.Z` 會裝 `main` 的最新程式。開發時在 checkout 用 `make install`(editable)。
 
-`monitask-center install` 會依序：準備執行環境 → (選用)設定 Telegram → 載入 launchd job → 最終驗證。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
+`monitask-center install` 會依序：準備執行環境 → (選用)設定 Telegram → 載入 launchd job → 最終驗證 → 檢查輔助使用權限。每項檢查通過以 ✅ 標示；最終驗證(排程檔已安裝且 job 已載入)未通過以 ❌ 標示並以非零狀態結束，全部通過才顯示「✅ 安裝完成」。
+
+輔助使用檢查(「自動播放/暫停」或「下班詢問」開啟時)讀取 TCC.db，確認授權已開啟且對應**目前**的 runner(重新簽章會改變 cdhash，舊授權即失效，下班「停止計時」會失敗)。未授權或已失效時，安裝程式會自動執行 `tccutil reset Accessibility com.dannylin.monitask-center` 清掉舊授權、以 app 身分啟動 runner 讓 macOS 列出目前版本並跳出詢問，再開啟「系統設定 → 隱私權與安全性 → 輔助使用」；你只需開啟 MonitaskCenter 的開關(macOS 不允許指令代為開啟)。終端機沒有「完整磁碟存取權」而無法讀取時，只跳出詢問(已授權則不顯示)，不會重設授權。此步驟不等待、也不會讓安裝失敗。
 
 活動率通知使用獨立的 Node.js 排程，需在 checkout 內執行，並沿用 `monitask-center install` 建立的 python 執行環境讀取主設定。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會輸出實際 Node 執行檔路徑，請將該路徑加入「系統設定 → 隱私權與安全性 → 完整磁碟存取權」。macOS 不允許安裝程式自行授予此權限。Node.js 更新後若背景工作再次出現 `EPERM`，請重新加入目前輸出的路徑。
 
@@ -78,7 +80,7 @@ bash activity/install.sh install
 個別報表設定可在專案 `.env` 加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。此端點屬網站內部介面，格式仍可能改動；「最近一小時」仍為近六段的估計值。
 
 - **執行環境全自動**：全部放在 `~/Library/Application Support/MonitaskCenter/`，不依賴任何 checkout。缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；產生 `MonitaskCenter.app`(內含 python runner)與 launchd 進入點 `run.sh`；runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
-- **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`；未授權時動作會回報失敗並通知，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。
+- **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)或下班停止計時，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`(`install` 會檢查並引導，見上)；未授權時動作會回報失敗並通知、結果寫入 `monitask.log`，且 runner 會請 macOS 重新跳出授權詢問，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。
 - **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入 `~/.monitask-center/.env`(權限 600，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。Telegram 關閉或傳送失敗時退回 macOS 通知。
 
 ## 設定:`monitask-center --config`
@@ -241,7 +243,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 ## 維護注意
 
 - **需要自動播放/暫停時保留 AX 授權** `MonitaskCenter.app`；移除授權不影響狀態讀取與提醒。launchd 一律經 `run.sh` 以 `/bin/bash` 呼叫 bundle 內 python(直接 exec bundle 執行檔會被當 app 啟動而失效)。
-- **brew 升級 `python@3.13`** 可能讓 bundle 內 python 副本連結的 framework 路徑失效：重跑 `monitask-center install` 會重建 runner 並重新簽章；重簽後可能需要重新授予 Accessibility。
+- **brew 升級 `python@3.13`** 可能讓 bundle 內 python 副本連結的 framework 路徑失效：重跑 `monitask-center install` 會重建 runner 並重新簽章；重簽後舊的 Accessibility 授權失效，同一次 `install` 的輔助使用檢查會重設並開啟設定面板，開啟 MonitaskCenter 即可。
 - **執行環境不在 checkout 裡**：launchd 執行 `~/Library/Application Support/MonitaskCenter/run.sh`，它指向目前安裝的 `monitask_center` 套件(git 標籤安裝時在 uv tool venv，editable 安裝時在 checkout 的 `src/`)。換了安裝方式或 venv 的 Python 版本，任何 CLI 指令(`install`/`uninstall` 除外)都會重寫 `run.sh`。
 - **從 1.5.0 以前升級**：舊版的 job 從 checkout 執行。新版在「立即更新」的同步步驟，或任何 CLI 指令(`install`/`uninstall` 除外)時，會把 `MonitaskCenter.app`(保留 Accessibility 授權)、`pylibs`、`.env` 從 checkout 複製到上述目錄，產生 `run.sh`，再把 job 改指向它。若 `git pull` 已刪掉 checkout 內的 bundle，會用 Homebrew 的 python 重建並重新簽章，這時可能需要重新授予 Accessibility。整點 `check` 無法自行搬移(它本身就從舊位置執行)，所以 `git pull` 之後請執行任一 `monitask-center` 指令。
 - 開發時用 `make install`(editable)：修改程式碼不需重新安裝；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。
