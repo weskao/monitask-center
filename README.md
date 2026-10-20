@@ -77,7 +77,7 @@ bash activity/run.sh login
 bash activity/install.sh install
 ```
 
-個別報表設定可在專案 `.env` 加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。此端點屬網站內部介面，格式仍可能改動；「最近一小時」仍為近六段的估計值。
+個別報表設定可在專案 `.env` 加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。要立即以當下時間發送一次活動率（不受工作時窗限制），執行 `monitask-center activity`（或 `--activity`、`bash activity/run.sh now`）。此端點屬網站內部介面，格式仍可能改動；「最近一小時」仍為近六段的估計值。
 
 - **執行環境全自動**：全部放在 `~/Library/Application Support/MonitaskCenter/`，不依賴任何 checkout。缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；產生 `MonitaskCenter.app`(內含 python runner)與 launchd 進入點 `run.sh`；runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)或下班停止計時，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`(`install` 會檢查並引導，見上)；未授權時動作會回報失敗並通知、結果寫入 `monitask.log`，且 runner 會請 macOS 重新跳出授權詢問，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。
@@ -143,7 +143,10 @@ bash activity/install.sh install
 | `monitask-center dump-windows` | 印出 Monitask 視窗與按鈕結構(診斷用) |
 | `monitask-center logs` | 追蹤日誌；`logs --path` 只印出路徑 |
 | `monitask-center config` | 等同 `monitask-center --config` |
-| `monitask-center update` | 更新到最新的發行版本標籤；`--update` 相同(見「檢查更新」) |
+| `monitask-center update` | 更新到最新的發行版本標籤(見「檢查更新」) |
+| `monitask-center activity` | 立即以當下時間發送一次活動率到 Telegram(不受工作時段限制)。需先以 `bash activity/install.sh install` 安裝活動率排程，指令會執行該排程所指的 `activity/run.sh now` |
+
+每個指令也可加上 `--` 前綴，結果相同(例如 `monitask-center --activity`、`--update`)；`config` 則也可不加 `--`。`monitask-center --help` 會列出全部。
 
 Makefile 只是薄包裝：
 
@@ -153,6 +156,7 @@ make config      # monitask-center --config
 make status      # monitask-center status
 make plan        # monitask-center plan
 make logs        # monitask-center logs
+make activity    # monitask-center activity
 make uninstall   # monitask-center uninstall
 make test        # uv run --group dev pytest -q
 make help        # 列出全部
@@ -165,7 +169,7 @@ make help        # 列出全部
 - 互動終端機：顯示選單 — 立即更新(`uv tool install --force --from git+https://github.com/weskao/monitask-center.git@<新版標籤> monitask-center`，裝的是該版本標籤而非 `main`，再用新版程式同步執行環境與 launchd)、略過(下次再問)、略過到下一版。
 - 管線或非 TTY：只在 stderr 印一行提示，不阻塞。
 
-`check`、`dump-windows`、`logs`、`update` 與 launchd 排程不做檢查。離線或查詢失敗時靜默略過。
+`check`、`dump-windows`、`logs`、`activity`、`update` 與 launchd 排程不做檢查。離線或查詢失敗時靜默略過。
 
 ### 手動更新：`monitask-center update`
 

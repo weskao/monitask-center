@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 PROJECT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-.PHONY: help install config uninstall status plan logs test
+.PHONY: help install config uninstall status plan logs activity test
 
 help:
 	@printf '%s\n' \
@@ -13,6 +13,7 @@ help:
 		'  make status     Show workday, schedule and Monitask status' \
 		'  make plan       Show today'"'"'s check plan' \
 		'  make logs       Follow the Monitask log' \
+		'  make activity   Send the activity rate to Telegram now' \
 		'  make test       Run the test suite'
 
 install:
@@ -32,6 +33,9 @@ plan:
 
 logs:
 	@monitask-center logs
+
+activity:
+	@monitask-center activity
 
 test:
 	@cd "$(PROJECT_DIR)" && uv run --group dev pytest -q

@@ -3,6 +3,7 @@
 #   ./run.sh login        first run: open a visible browser and log in to Monitask by hand (saves the profile)
 #   ./run.sh fetch        fetch once headlessly (skipped automatically outside the work window) — used by launchd
 #   ./run.sh fetch force  fetch once headlessly, skipping the window gate (for testing)
+#   ./run.sh now          send the current activity rate right now (same as fetch force)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 # Prefer Homebrew Node so the Full Disk Access grant maps to the program the schedule actually runs.
@@ -20,5 +21,6 @@ NODE="${MONITASK_ACTIVITY_NODE:-/opt/homebrew/opt/node/bin/node}"
 case "${1:-}" in
   login) exec "$NODE" "$HERE/login.js" ;;
   fetch) shift; exec "$NODE" "$HERE/fetch.js" "$@" ;;
-  *) echo "usage: $0 {login | fetch [force]}" >&2; exit 2 ;;
+  now) exec "$NODE" "$HERE/fetch.js" force ;;
+  *) echo "usage: $0 {login | fetch [force] | now}" >&2; exit 2 ;;
 esac

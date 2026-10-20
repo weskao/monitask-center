@@ -17,17 +17,17 @@ from urllib.request import url2pathname
 from . import __version__, config, i18n, install, launchd, status, update_check
 from .i18n import t
 
-COMMANDS = ("install", "uninstall", "status", "plan", "check", "dump-windows", "logs", "update")
-EXEC_COMMANDS = ("check", "dump-windows", "logs")  # replace this process (or run under launchd): no update check
+COMMANDS = ("install", "uninstall", "status", "plan", "check", "dump-windows", "logs", "update", "activity")
+EXEC_COMMANDS = ("check", "dump-windows", "logs", "activity")  # replace this process (or run under launchd): no update check
 REPO = "weskao/monitask-center"  # public: releases come from the unauthenticated GitHub API
 
 
 def _normalize_argv(argv: list[str]) -> list[str]:
-    """`monitask-center config` == `monitask-center --config`; `--update` == `update`."""
+    """`config` == `--config`, and every command also answers to `--<command>` (`--update` == `update`)."""
     if argv and argv[0] == "config":
         return ["--config", *argv[1:]]
-    if argv and argv[0] == "--update":
-        return ["update", *argv[1:]]
+    if argv and argv[0].removeprefix("--") in COMMANDS:
+        return [argv[0].removeprefix("--"), *argv[1:]]
     return argv
 
 
@@ -53,8 +53,8 @@ class _Parser(argparse.ArgumentParser):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = _Parser(prog="monitask-center", description=t("cli.description"), allow_abbrev=False,
-                add_help=False, formatter_class=_Formatter)
+    p = _Parser(prog="monitask-center", description=t("cli.description"), epilog=t("cli.epilog"),
+                allow_abbrev=False, add_help=False, formatter_class=_Formatter)
     p.add_argument("-h", "--help", action="help", help=t("cli.help.help"))
     p.add_argument("--config", action="store_true", help=t("cli.help.config"))
     sub = p.add_subparsers(dest="command", metavar="{" + ",".join(COMMANDS) + "}")
@@ -116,6 +116,15 @@ def cmd_logs(path_only: bool) -> int:
         print(t("cli.logs.missing", path=path), file=sys.stderr)
         return 1
     return _exec("/usr/bin/tail", ["tail", "-n", "50", "-f", str(path)])
+
+
+def cmd_activity() -> int:
+    """Send the activity rate now, via the checkout the optional activity job was installed from."""
+    script = launchd.runner("activity")
+    if not script or not Path(script).is_file():
+        print(t("cli.activity.missing"), file=sys.stderr)
+        return 1
+    return _exec("/bin/bash", ["/bin/bash", script, "now"])
 
 
 def cmd_config() -> int:
@@ -266,5 +275,7 @@ def _main(raw: list[str]) -> int:
             return cmd_logs(args.path)
         case "update":
             return cmd_update()
+        case "activity":
+            return cmd_activity()
         case cmd:  # check, dump-windows: the read-only AX engine runs under run.sh
             return _exec("/bin/bash", ["/bin/bash", str(config.RUNNER), cmd])

@@ -186,4 +186,3 @@ def test_update_strings_are_in_the_catalog_with_their_emoji():
     for key, emoji in (("update.cmd.latest", "✅"), ("update.cmd.updating", "⬆️"), ("update.cmd.done", "🎉"),
                        ("update.cmd.local", "ℹ️"), ("update.cmd.offline", "❌"), ("update.cmd.failed", "❌")):
         assert catalog[key].startswith(emoji), key
-    assert "--update" in i18n.t("cli.help.update")

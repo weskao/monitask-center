@@ -66,14 +66,16 @@ def stale_jobs(settings: config.Settings) -> list[str]:
     return [job for job in JOBS if not current(job)]
 
 
+def runner(job: str) -> str | None:
+    """The script an installed job's plist runs (``ProgramArguments[1]``), or ``None``."""
+    try:
+        return plistlib.loads(plist_path(job).read_bytes())["ProgramArguments"][1]
+    except (OSError, ValueError, KeyError, IndexError, TypeError, plistlib.InvalidFileException):
+        return None
+
+
 def foreign_jobs() -> list[str]:
     """Installed jobs that run something other than config.RUNNER (a 1.5.0-and-older checkout)."""
-    def runner(job: str) -> str | None:
-        try:
-            return plistlib.loads(plist_path(job).read_bytes())["ProgramArguments"][1]
-        except (OSError, ValueError, KeyError, IndexError, TypeError, plistlib.InvalidFileException):
-            return None
-
     return [job for job in JOBS if plist_path(job).exists() and runner(job) != str(config.RUNNER)]
 
 

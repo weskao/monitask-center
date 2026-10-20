@@ -1,5 +1,6 @@
 import io
 import os
+import plistlib
 import sys
 from datetime import datetime
 
@@ -87,6 +88,7 @@ def test_help_lists_every_command(capsys):
     out = capsys.readouterr().out
     for word in ("--config", *cli.COMMANDS):
         assert word in out
+    assert t("cli.epilog") in " ".join(out.split())  # argparse re-wraps the epilog
     assert t("cli.description") in out
 
 
@@ -189,3 +191,29 @@ def test_update_migrate_message_ends_its_line(monkeypatch, capsys):
     monkeypatch.setattr(install, "migrate", lambda s: None)
     exec(cli._MIGRATE, {})
     assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("argv", [["activity"], ["--activity"]])
+def test_activity_execs_the_installed_run_sh_now(monkeypatch, tmp_path, argv):
+    script = tmp_path / "run.sh"
+    script.write_text("")
+    plist = tmp_path / "activity.plist"
+    plist.write_bytes(plistlib.dumps({"ProgramArguments": ["/bin/bash", str(script), "fetch"]}))
+    monkeypatch.setattr(launchd, "plist_path", lambda job: plist)
+    calls = []
+    monkeypatch.setattr(os, "execv", lambda path, args: calls.append((path, args)))
+    assert cli.main(argv) == 1  # patched exec "returns"
+    assert calls == [("/bin/bash", ["/bin/bash", str(script), "now"])]
+
+
+def test_activity_without_the_job_points_to_its_installer(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(launchd, "plist_path", lambda job: tmp_path / "missing.plist")
+    monkeypatch.setattr(os, "execv", lambda *a: pytest.fail("must not exec"))
+    assert cli.main(["activity"]) == 1
+    assert t("cli.activity.missing") in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("cmd", cli.COMMANDS)
+def test_every_command_also_answers_to_its_dashed_form(cmd):
+    assert cli._normalize_argv([f"--{cmd}", "x"]) == [cmd, "x"]
+    assert cli._normalize_argv([cmd, "x"]) == [cmd, "x"]

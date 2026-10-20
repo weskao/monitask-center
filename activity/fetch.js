@@ -1,11 +1,11 @@
 'use strict';
 // Headlessly fetch today's activity rate from the report page and notify hourly within the work window. launchd entry point: run.sh fetch.
-// Argument: force = skip the work-window gate (for testing).
+// Argument: force = skip the work-window gate (run.sh now / testing).
 const { chromium } = require('playwright');
 const { execFileSync, spawnSync } = require('child_process');
 const os = require('os');
 const path = require('path');
-const { PROFILE_DIR, workWindow, fetchActivity } = require('./lib');
+const { PROFILE_DIR, workWindow, fetchActivity, taipeiParts } = require('./lib');
 
 const TG_SEND = path.join(os.homedir(), '.claude/scripts/tg-send.sh');
 const REPO_DIR = path.join(__dirname, '..');
@@ -53,7 +53,7 @@ function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
       process.exitCode = 1;
       return;
     }
-    const { hour, minute } = require('./lib').taipeiParts();
+    const { hour, minute } = taipeiParts();
     const lines = [
       `📊 Monitask 活動率 ${hour}:${minute}`,
       `今日活動：${a.daily}%`,

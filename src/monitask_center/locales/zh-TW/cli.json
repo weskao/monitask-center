@@ -1,4 +1,5 @@
 {
+  "cli.epilog": "每個指令也可加上 -- 前綴,結果相同(例如 --activity 等同 activity);config 也可不加 --。",
   "cli.description": "Monitask 工作日檢查器(通知提醒,並在開工與午休自動播放/暫停)",
   "cli.help.config": "開啟互動設定選單",
   "cli.help.install": "首次安裝:執行環境、Telegram、輔助使用權限與背景排程",
@@ -9,7 +10,9 @@
   "cli.help.dump-windows": "列出 Monitask 視窗與按鈕(診斷用)",
   "cli.help.logs": "追蹤日誌檔",
   "cli.help.logs_path": "只印出日誌檔路徑",
-  "cli.help.update": "更新到最新的發行版本標籤(同 --update;不接受其他參數)",
+  "cli.help.update": "更新到最新的發行版本標籤(不接受其他參數)",
+  "cli.help.activity": "立即以當下時間發送一次活動率到 Telegram(不受工作時段限制)",
+  "cli.activity.missing": "找不到活動率排程:請先在 checkout 執行 bash activity/install.sh install",
   "cli.plan.runs": "實際執行",
   "cli.plan.none": "無",
   "cli.logs.missing": "找不到日誌檔:{path}",
