@@ -4,7 +4,6 @@ Nothing here touches a real Keychain: ``conftest.no_real_keychain`` stubs the pu
 helpers, and the tests that exercise them install a fake ``CredentialStore``.
 """
 
-import os
 import stat
 
 import pytest

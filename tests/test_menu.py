@@ -261,7 +261,7 @@ def test_vacation_submenu_in_the_tui(monkeypatch):
 
 def test_sync_runs_only_for_schedule_changes(launchd_calls):
     # lunch, language, telegram, vacation: none of these move the launchd schedule
-    script = "4\n5\n%s\n6\n14\n7\n8\n%s\na 2026-10-05\n\n" % (n("language"), n("vacation"))
+    script = f"4\n5\n{n('language')}\n6\n14\n7\n8\n{n('vacation')}\na 2026-10-05\n\n"
     _, output = numbered(script + "q\n")
     assert launchd_calls == []
     _, output = numbered("1\n9\n2\n17\n3\n2\nq\n")
@@ -282,7 +282,7 @@ def test_sync_failure_is_shown_not_raised(monkeypatch):
 
 
 def test_reset_needs_confirmation_and_keeps_vacation():
-    numbered("1\n9\n%s\na 2026-10-05\n\nr1\nn\nq\n" % n("vacation"))
+    numbered(f"1\n9\n{n('vacation')}\na 2026-10-05\n\nr1\nn\nq\n")
     assert config.load().start_hour == 9
     numbered("r1\ny\nq\n")
     assert config.load().start_hour == 10

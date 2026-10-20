@@ -26,12 +26,12 @@ from pathlib import Path
 
 import AppKit
 import ApplicationServices as AX
-from Foundation import NSDate, NSRunLoop
 import Quartz
+from Foundation import NSDate, NSRunLoop
 
 from monitask_center import check, config, i18n, launchd, notify, workday
-from monitask_center.status import action_text, reason_text, state_text
 from monitask_center.i18n import t
+from monitask_center.status import action_text, reason_text, state_text
 
 APP_NAME = "Monitask"
 AX_API_DISABLED = -25211

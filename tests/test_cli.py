@@ -5,7 +5,16 @@ from datetime import datetime
 
 import pytest
 
-from monitask_center import cli, config, i18n, install, launchd, status, update_check, workday
+from monitask_center import (
+    cli,
+    config,
+    i18n,
+    install,
+    launchd,
+    status,
+    update_check,
+    workday,
+)
 from monitask_center.i18n import t
 from monitask_center.tui import menu
 

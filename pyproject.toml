@@ -18,7 +18,12 @@ build-backend = "hatchling.build"
 packages = ["src/monitask_center"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.17.1"]
+
+[tool.ruff.lint]
+# Pinned instead of ruff's moving default set, so a ruff upgrade cannot change
+# lint on unchanged code. I/UP are whole groups (autofixable); B is cherry-picked.
+select = ["E4", "E7", "E9", "F", "I", "UP", "B023", "B904"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
