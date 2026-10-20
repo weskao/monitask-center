@@ -24,3 +24,20 @@ ship with a migration that the new code runs by itself — never "tell users to 
 - **Done means:** a test that rebuilds the pre-upgrade state, runs the migration, and asserts it is
   fixed and a no-op the second time; then recreate the old state on the real machine and run
   `monitask-center status`. Note the upgrade behavior in README.
+
+## Adding a CLI command
+
+One entry in `cli.COMMANDS` is the whole registration; everything else derives from it — never
+hand-copy a command list or an alias. When a new command doesn't fit the shared code, refactor
+that code instead of special-casing the command.
+
+- **Derived automatically:** the subparser and its `--help` line (`cli.help.<name>` in
+  `locales/*/cli.json`, guarded by `test_i18n_catalog`), the `--<name>` alias
+  (`_normalize_argv`), and the help note on that alias (`cli.epilog`). Don't repeat
+  "(同 --x)" in help strings.
+- **Add by hand:** a `case` in `_main`; `EXEC_COMMANDS` if it execs (skips the update check and
+  migrations); a row in README's「其他指令」table; a Makefile target + `make help` line for
+  user-facing ones.
+- **Reuse:** read installed plists through `launchd.runner(job)`, exec through `cli._exec`.
+- **Test:** a `tests/test_cli.py` case for its dispatch; the parametrized alias/help tests pick
+  up the new name by themselves.
