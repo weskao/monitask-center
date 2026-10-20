@@ -19,8 +19,6 @@ handled.
 
 from __future__ import annotations
 
-from . import present
-
 INDENT = 2
 SPARE = 1  # the last column is never written, so a line can never wrap
 

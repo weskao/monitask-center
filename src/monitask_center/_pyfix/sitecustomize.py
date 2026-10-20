@@ -1,4 +1,5 @@
 import platform
+
 _orig = platform.mac_ver
 def mac_ver():
     v = _orig()

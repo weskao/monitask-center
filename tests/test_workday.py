@@ -1,8 +1,9 @@
-import pytest
 import json
 from datetime import date
 
-from monitask_center import config, notify, workday
+import pytest
+
+from monitask_center import notify, workday
 from monitask_center.config import Settings
 
 REC = [
@@ -130,8 +131,11 @@ def test_error_texts_come_from_catalog(monkeypatch):
     import urllib.request
 
     class Resp(io.BytesIO):
-        __enter__ = lambda self: self
-        __exit__ = lambda self, *a: None
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return None
 
     for body, key in ((b"x" * (workday.MAX_PAYLOAD + 1), "too_large"), (b"{}", "bad_format")):
         monkeypatch.setattr(urllib.request, "urlopen", lambda *a, _b=body, **k: Resp(_b))

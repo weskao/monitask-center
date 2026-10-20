@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 
 from monitask_center.i18n import t as _t
-
 from monitask_center.workday import workday_status as REAL_WORKDAY_STATUS
 
 ROOT = Path(__file__).resolve().parents[1]
