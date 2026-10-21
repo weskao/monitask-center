@@ -16,12 +16,20 @@ function host() {
   catch (e) { return os.hostname(); }
 }
 
+// Run from a terminal (`monitask-center activity`): print the message itself, coloured; launchd logs stay plain.
+const TTY = Boolean(process.stdout.isTTY);
+const COLOR = TTY && !process.env.NO_COLOR;
+function paint(text, code) { return COLOR ? `\x1b[${code}m${text}\x1b[0m` : text; }
+// Activity rate tone: below 60% red, below 80% amber, otherwise green.
+function tone(rate) { return rate < 60 ? '1;31' : rate < 80 ? '1;38;5;214' : '1;32'; }
+
 function notify(msg) {
-  const result = spawnSync('/bin/bash', [TG_SEND, 'send', `${msg}\n🖥️ ${host()}`],
+  const result = spawnSync('/bin/bash', [TG_SEND, 'send', msg],
     { cwd: REPO_DIR, encoding: 'utf8', timeout: 45000 });
   const receipt = (result.stderr || '').match(/tg-send: (?:sendMessage|sendRichMessage) OK message_id=\d+/);
   if (result.status === 0 && receipt) {
-    log(receipt[0]);
+    if (TTY) console.log(paint(receipt[0], '2'));
+    else log(receipt[0]);
     return true;
   }
   log('tg-send 失敗或未回傳送達確認');
@@ -49,19 +57,24 @@ function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
         ? `登入過期，請執行 bash "${path.join(__dirname, 'run.sh')}" login 重登。`
         : error.message;
       log(detail);
-      notify(`⚠️ Monitask 活動率抓取失敗：${detail}`);
+      notify(`⚠️ Monitask 活動率抓取失敗：${detail}\n🖥️ ${host()}`);
       process.exitCode = 1;
       return;
     }
     const { hour, minute } = taipeiParts();
-    const lines = [
-      `📊 Monitask 活動率 ${hour}:${minute}`,
-      `今日活動：${a.daily}%`,
-      a.lastHour != null ? `最近一小時：≈${a.lastHour}%（近${Math.min(a.blocks.length, 6)}段）` : null,
-      (a.total || a.shots) ? `今日${a.total ? '總時 ' + a.total.replace(/\s+/g, '') : ''}${a.shots ? '　截圖 ' + a.shots : ''}` : null,
+    const machine = host();
+    // c paints the terminal copy; Telegram gets the same lines unpainted.
+    const lines = (c) => [
+      c(`📊 Monitask 活動率 ${hour}:${minute}`, '1;38;5;37'),
+      `今日活動：${c(`${a.daily}%`, tone(Number(a.daily)))}`,
+      a.lastHour != null ? `最近一小時：${c(`≈${a.lastHour}%`, tone(a.lastHour))}（近${Math.min(a.blocks.length, 6)}段）` : null,
+      (a.total || a.shots) ? `今日${a.total ? '總時 ' + c(a.total.replace(/\s+/g, ''), '36') : ''}${a.shots ? '　截圖 ' + c(a.shots, '36') : ''}` : null,
+      c(`🖥️ ${machine}`, '2'),
     ].filter(Boolean);
-    log(lines.join(' | '));
-    notify(lines.join('\n'));
+    const plain = lines((text) => text);
+    if (TTY) console.log(lines(paint).join('\n'));
+    else log(plain.join(' | '));
+    notify(plain.join('\n'));
   } finally {
     await ctx.close();
   }

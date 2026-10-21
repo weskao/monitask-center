@@ -222,17 +222,37 @@ console.log(JSON.stringify(require('./activity/lib').workWindow()));
     (1, "send failed", 1),
 ])
 def test_activity_delivery_requires_a_receipt(status, receipt, expected):
+    result = _deliver(str(status), receipt, "65", tty=False)
+    assert result.returncode == expected
+    assert "今日活動：65%" in result.stdout
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+@pytest.mark.parametrize("daily,code", [("59.99", "1;31"), ("60", "1;38;5;214"), ("80", "1;32")])
+def test_activity_in_a_terminal_prints_the_message_coloured_with_the_receipt_last(daily, code):
+    result = _deliver("0", "tg-send: sendMessage OK message_id=123", daily, tty=True)
+    assert result.returncode == 0
+    lines = result.stdout.splitlines()
+    assert lines[0].startswith("\x1b[1;38;5;37m📊 Monitask 活動率 ")
+    assert lines[1] == f"今日活動：\x1b[{code}m{daily}%\x1b[0m"
+    assert lines[-2] == "\x1b[2m🖥️ Test Host\x1b[0m"
+    assert lines[-1] == "\x1b[2mtg-send: sendMessage OK message_id=123\x1b[0m"
+
+
+def _deliver(status: str, receipt: str, daily: str, tty: bool) -> subprocess.CompletedProcess:
     script = """
+const [status, receipt, daily, tty] = process.argv.slice(1);
+process.stdout.isTTY = tty === 'true';
 const lib = require('./activity/lib');
 lib.workWindow = () => ({ok: true, reportDate: '10/07/2026'});
 const child = require('child_process');
 child.execFileSync = () => 'Test Host';
-child.spawnSync = () => ({status: Number(process.argv[1]), stderr: process.argv[2]});
+child.spawnSync = () => ({status: Number(status), stderr: receipt});
 const request = {get: async (url) => ({status: () => 200, ok: () => true,
   url: () => url,
   text: async () => new URL(url).pathname === '/report'
     ? '<input id="Id" value="00000000-0000-0000-0000-000000000001">'
-    : '<div class="timeline__online-widget_medium-text">65%</div>',
+    : `<div class="timeline__online-widget_medium-text">${daily}%</div>`,
 })};
 const Module = require('module');
 const load = Module._load;
@@ -244,7 +264,6 @@ Module._load = function(name, ...args) {
 };
 require('./activity/fetch');
 """
-    result = subprocess.run(["node", "-e", script, str(status), receipt], cwd=ROOT,
-                            capture_output=True, text=True)
-    assert result.returncode == expected
-    assert "今日活動：65%" in result.stdout
+    env = {k: v for k, v in os.environ.items() if k != "NO_COLOR"}
+    return subprocess.run(["node", "-e", script, status, receipt, daily, str(tty).lower()],
+                          cwd=ROOT, capture_output=True, text=True, env=env)
