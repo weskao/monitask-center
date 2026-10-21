@@ -67,7 +67,7 @@ function log(m) { console.log(`[${new Date().toISOString()}] ${m}`); }
     const lines = (c) => [
       c(`📊 Monitask 活動率 ${hour}:${minute}`, '1;38;5;37'),
       `今日活動：${c(`${a.daily}%`, tone(Number(a.daily)))}`,
-      a.lastHour != null ? `最近一小時：${c(`≈${a.lastHour}%`, tone(a.lastHour))}（近${Math.min(a.blocks.length, 6)}段）` : null,
+      a.latest ? `最近紀錄 ${a.latest.time}：${c(`${a.latest.rate}%`, tone(a.latest.rate))}（${a.latest.minutes} 分鐘）` : null,
       (a.total || a.shots) ? `今日${a.total ? '總時 ' + c(a.total.replace(/\s+/g, ''), '36') : ''}${a.shots ? '　截圖 ' + c(a.shots, '36') : ''}` : null,
       c(`🖥️ ${machine}`, '2'),
     ].filter(Boolean);

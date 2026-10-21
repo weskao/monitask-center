@@ -77,7 +77,7 @@ bash activity/run.sh login
 bash activity/install.sh install
 ```
 
-個別報表設定可在專案 `.env` 加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。要立即以當下時間發送一次活動率（不受工作時窗限制），執行 `monitask-center activity`（或 `--activity`、`bash activity/run.sh now`）。此端點屬網站內部介面，格式仍可能改動；「最近一小時」仍為近六段的估計值。
+個別報表設定可在專案 `.env` 加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。要立即以當下時間發送一次活動率（不受工作時窗限制），執行 `monitask-center activity`（或 `--activity`、`bash activity/run.sh now`）。此端點屬網站內部介面，格式仍可能改動。「最近紀錄」顯示報表中最新一段 10 分鐘的活動率及其起始時間（例如 14:25 傳送時顯示 14:20 那段）；該段尚未滿 10 分鐘時會標出實際分鐘數，計時已停止時則顯示最後一段的時間。
 
 - **執行環境全自動**：全部放在 `~/Library/Application Support/MonitaskCenter/`，不依賴任何 checkout。缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；產生 `MonitaskCenter.app`(內含 python runner)與 launchd 進入點 `run.sh`；runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)或下班停止計時，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`(`install` 會檢查並引導，見上)；未授權時動作會回報失敗並通知、結果寫入 `monitask.log`，且 runner 會請 macOS 重新跳出授權詢問，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。

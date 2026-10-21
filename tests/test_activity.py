@@ -24,12 +24,18 @@ ROOT = Path(__file__).resolve().parents[1]
       <div class="timeline__online-widget_medium-text">67.25%</div>
       <div class="timeline__online-widget_online-text">02H 15米</div>
       <a class="all-screenshots-link"><i class="icon"></i><span>42 截图</span></a>
-      <span>80% 的 10 分</span>
-    ''', {"daily": "67.25", "lastHour": 80, "blocks": [80],
-          "total": "02H 15米", "shots": "42"}),
+      <div class="screen"><span class="screen_time"> 14:10 </span>
+        <a title="Default 上 2026/10/07 14:12:30 - 截图 1 的 1"></a>
+        <span class="ml-1">70% 的 10 分钟。</span></div>
+      <div class="screen"></div>
+      <div class="screen"><span class="screen_time"> 14:20 </span>
+        <span class="ml-1">80% 的 5 分钟。</span></div>
+    ''', {"daily": "67.25", "blocks": [70, 80],
+          "latest": {"time": "14:20", "rate": 80, "minutes": 5},
+          "total": "02H 15分", "shots": "42"}),
     (200, "/Report/TimeSpanPartial",
      '<div class="timeline__online-widget_medium-text">0.00%</div>',
-     {"daily": "0.00", "lastHour": None, "blocks": [], "total": None, "shots": None}),
+     {"daily": "0.00", "blocks": [], "latest": None, "total": None, "shots": None}),
     (200, "/Report/TimeSpanPartial", '<div>99%</div>', "報表資料缺少有效的活動率"),
     (200, "/Report/TimeSpanPartial",
      '<div class="timeline__online-widget_medium-text">101%</div>',
@@ -239,9 +245,28 @@ def test_activity_in_a_terminal_prints_the_message_coloured_with_the_receipt_las
     assert lines[-1] == "\x1b[2mtg-send: sendMessage OK message_id=123\x1b[0m"
 
 
-def _deliver(status: str, receipt: str, daily: str, tty: bool) -> subprocess.CompletedProcess:
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+@pytest.mark.parametrize("slots,expected", [
+    ('<span class="screen_time"> 14:10 </span><span>70% 的 10 分钟。</span>'
+     '<span class="screen_time"> 14:20 </span><span>55% 的 5 分钟。</span>',
+     "最近紀錄 14:20：55%（5 分鐘）"),
+    ("", None),
+])
+def test_activity_reports_the_latest_slot_with_its_own_time(slots, expected):
+    result = _deliver("0", "tg-send: sendMessage OK message_id=123", "65", tty=False,
+                      slots=slots)
+    assert result.returncode == 0
+    assert "最近一小時" not in result.stdout
+    if expected:
+        assert expected in result.stdout
+    else:
+        assert "最近紀錄" not in result.stdout
+
+
+def _deliver(status: str, receipt: str, daily: str, tty: bool,
+             slots: str = "") -> subprocess.CompletedProcess:
     script = """
-const [status, receipt, daily, tty] = process.argv.slice(1);
+const [status, receipt, daily, tty, slots] = process.argv.slice(1);
 process.stdout.isTTY = tty === 'true';
 const lib = require('./activity/lib');
 lib.workWindow = () => ({ok: true, reportDate: '10/07/2026'});
@@ -252,7 +277,7 @@ const request = {get: async (url) => ({status: () => 200, ok: () => true,
   url: () => url,
   text: async () => new URL(url).pathname === '/report'
     ? '<input id="Id" value="00000000-0000-0000-0000-000000000001">'
-    : `<div class="timeline__online-widget_medium-text">${daily}%</div>`,
+    : `<div class="timeline__online-widget_medium-text">${daily}%</div>${slots}`,
 })};
 const Module = require('module');
 const load = Module._load;
@@ -265,5 +290,5 @@ Module._load = function(name, ...args) {
 require('./activity/fetch');
 """
     env = {k: v for k, v in os.environ.items() if k != "NO_COLOR"}
-    return subprocess.run(["node", "-e", script, status, receipt, daily, str(tty).lower()],
+    return subprocess.run(["node", "-e", script, status, receipt, daily, str(tty).lower(), slots],
                           cwd=ROOT, capture_output=True, text=True, env=env)

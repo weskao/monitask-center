@@ -55,15 +55,20 @@ function reportUrl(reportDate) {
   return `https://app.monitask.com/report?${params}`;
 }
 
-// Parse the activity rate from the report page's innerText. Returns {daily, lastHour, blocks, total, shots}.
+// Parse the activity rate from the report page's innerText. Returns {daily, blocks, total, shots}.
 function parseActivity(text) {
   const daily = (text.match(/^\s*(\d+(?:\.\d+)?)\s*%\s*$/m) || [])[1] || null;
   const blocks = [...text.matchAll(/(\d+)\s*%\s*的\s*\d+\s*分/g)].map((x) => +x[1]);
-  const lastN = blocks.slice(-6);
-  const lastHour = lastN.length ? Math.round(lastN.reduce((a, b) => a + b, 0) / lastN.length) : null;
   const total = (text.match(/(\d+\s*H\s*\d+\s*米)/) || [])[1] || null;
   const shots = (text.match(/(\d+)\s*截图/) || [])[1] || null;
-  return { daily, lastHour, blocks, total, shots };
+  return { daily, blocks, total, shots };
+}
+
+// The newest tracked 10-minute slot (order=hour_asc puts it last): {time, rate, minutes} or null.
+function latestSlot(html) {
+  const slots = [...html.matchAll(/\bscreen_time\b[^>]*>\s*(\d{1,2}:\d{2})\s*<(?:(?!screen_time)[\s\S])*?(\d+)\s*%\s*的\s*(\d+)\s*分/g)];
+  const last = slots[slots.length - 1];
+  return last ? { time: last[1], rate: +last[2], minutes: +last[3] } : null;
 }
 
 async function reportResponse(request, url) {
@@ -104,10 +109,10 @@ async function fetchActivity(request, reportDate) {
   const daily = (html.match(/<div\b[^>]*class=["'][^"']*\btimeline__online-widget_medium-text\b[^"']*["'][^>]*>\s*(\d+(?:\.\d+)?)\s*%\s*<\/div>/i) || [])[1];
   if (daily == null || Number(daily) > 100) throw new Error('報表資料缺少有效的活動率');
   const text = html.replace(/<[^>]*>/g, '').replace(/&nbsp;|&#160;/g, ' ');
-  const total = (html.match(/<div\b[^>]*class=["'][^"']*\btimeline__online-widget_online-text\b[^"']*["'][^>]*>\s*([^<]+)<\/div>/i) || [])[1]?.trim() || null;
+  const total = (html.match(/<div\b[^>]*class=["'][^"']*\btimeline__online-widget_online-text\b[^"']*["'][^>]*>\s*([^<]+)<\/div>/i) || [])[1]?.trim().replace('米', '分') || null; // page renders minutes as 米 (mistranslated "M")
   const shotHtml = (html.match(/<a\b[^>]*class=["'][^"']*\ball-screenshots-link\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/i) || [])[1] || '';
   const shots = shotHtml.replace(/<[^>]*>/g, '').match(/\d+/)?.[0] || null;
-  return { ...parseActivity(text), daily, total, shots };
+  return { ...parseActivity(text), latest: latestSlot(html), daily, total, shots };
 }
 
 function isLoginPage(url, text) {

@@ -31,7 +31,8 @@ const { PROFILE_DIR, reportUrl, taipeiParts, fetchActivity } = require('./lib');
     try {
       const a = await fetchActivity(ctx.request, `${month}/${day}/${year}`);
       console.log('登入成功 ✅  報表資料驗證：');
-      console.log(`  今日活動=${a.daily}%  最近一小時≈${a.lastHour}%  總時=${a.total}  截圖=${a.shots}  段數=${a.blocks.length}`);
+      const latest = a.latest ? `${a.latest.time} ${a.latest.rate}%` : '無';
+      console.log(`  今日活動=${a.daily}%  最近紀錄=${latest}  總時=${a.total}  截圖=${a.shots}  段數=${a.blocks.length}`);
     } catch (error) {
       if (error.message === '當日尚無追蹤資料') {
         console.log('登入成功 ✅  當日尚無追蹤資料。');
