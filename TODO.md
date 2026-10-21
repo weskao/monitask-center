@@ -36,5 +36,5 @@
 
 - [ ] 【高優先】授予背景 Node 存取 Documents 的權限。實際 launchd 執行出現 `EPERM`，無法讀取 `activity/fetch.js`；同一程式從終端機可執行。需本人至「系統設定 → 隱私權與安全性 → 完整磁碟存取權」加入並啟用 `/opt/homebrew/Cellar/node/26.7.0/bin/node`。若 Node 更新，先確認 `/opt/homebrew/bin/node` 的實際路徑。尚未確認授權完成。
 - [ ] 授權後執行 `launchctl kickstart "gui/$(id -u)/com.monitask-center.activity"`，確認服務退出碼為 `0`、`activity.err` 沒有新的 `EPERM`。時段外只會略過，仍須在工作時窗確認百分比抓取及 Telegram 送達紀錄。
-- [ ] 【高優先】校準 `parseActivity()` 的「最近一小時」解析。實測出現今日活動 `00.00%`、總時 `00H00米`，但最近一小時 `≈100%`（1 段）；需與網頁的實際紀錄比對，確認未抓到範例／其他區塊，以及是否需要依區段時間加權。驗證前不要把這個估計值視為已確認的使用率。
+- [ ] 【高優先】校準 `parseActivity()` 的「最近一小時」解析。實測出現今日活動 `00.00%`、總時 `00H00分`，但最近一小時 `≈100%`（1 段）；需與網頁的實際紀錄比對，確認未抓到範例／其他區塊，以及是否需要依區段時間加權。驗證前不要把這個估計值視為已確認的使用率。
 - [ ] 將 activity 修正與 `tests/test_activity.py` 一起提交；測試已證明修正前工作時窗的 2 個案例失敗。此次 activity 與 TODO 變更尚未提交。
