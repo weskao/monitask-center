@@ -1,3 +1,23 @@
+## [1.9.0] - 2026-10-22
+
+### 🚀 Features
+
+- **cli:** Add activity command, alias every command
+- **activity:** Print a coloured report in the terminal
+
+### 🐛 Bug Fixes
+
+- **activity:** Report latest activity slot
+
+### 📚 Documentation
+
+- Describe how to add a cli command
+- **todo:** Use 分 for minutes in total-time note
+- Scope cli command guidance
+
+### ⚙️ Miscellaneous Tasks
+
+- **lint:** Add ruff with pinned rule set
 ## [1.8.0] - 2026-10-19
 
 ### 🚀 Features
