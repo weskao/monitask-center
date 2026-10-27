@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from monitask_center import config, launchd
+from monitask_center import config, launchd, status
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -331,6 +331,8 @@ def test_activity_in_a_terminal_prints_the_message_coloured_with_the_receipt_las
     assert lines[1] == f"今日活動：\x1b[{code}m{daily}%\x1b[0m"
     assert lines[-2] == "\x1b[2m🖥️ Test Host\x1b[0m"
     assert lines[-1] == "\x1b[2mtg-send: sendMessage OK message_id=123\x1b[0m"
+    saved = json.loads((config.home_dir() / status.ACTIVITY_FILE).read_text(encoding="utf-8"))
+    assert (saved["date"], saved["daily"]) == ("2026-10-07", daily)
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
@@ -381,7 +383,8 @@ Module._load = function(name, ...args) {
 require('./activity/fetch');
 """
     env = {k: v for k, v in os.environ.items() if k != "NO_COLOR"}
-    window = window or {"ok": True, "reportDate": "10/07/2026"}
+    window = window or {"ok": True, "iso": "2026-10-07", "reportDate": "10/07/2026",
+                        "state": str(config.home_dir() / "activity-alert.json")}
     return subprocess.run(["node", "-e", script, status, receipt, daily, str(tty).lower(), slots,
                            json.dumps(window)],
                           cwd=ROOT, capture_output=True, text=True, env=env)

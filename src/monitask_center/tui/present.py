@@ -122,7 +122,7 @@ class Style:
 
 INFO = (ITALIC, GREY)  # read-only status lines: grey italic, unlike the teal editable values
 TONES = {"value": (TEAL,), "muted": (GREY,), "ok": (GREEN,), "error": (RED,), "info": (AMBER,),
-         "input": (BOLD,), "": ()}
+         "warn": (AMBER,), "input": (BOLD,), "": ()}
 
 
 def compose(
@@ -137,14 +137,15 @@ def compose(
     hint2: str = "",
     message: tuple[str, str] = ("", ""),
     help_text: str = "",
-    extra: Sequence[str] = (),
+    extra: Sequence[str | tuple[str, str, str]] = (),
     extra_title: str = "",
     logo: Sequence[str] = (),
     tagline: str = "",
 ) -> list[str]:
     """The panel as a list of lines, each at most ``columns - 1`` wide.
 
-    *items* are ``(label, value, tone)``. With *lines* given the panel is shorter
+    *items* are ``(label, value, tone)``. An *extra* status line may be ``(text, mark, tone)``:
+    *mark* inside it is painted bold in that tone. With *lines* given the panel is shorter
     than the terminal: notes go first (status lines, then the rule, the second
     hint, the help line), then the row list becomes a viewport around *selected*.
     The message and hint lines are always reserved, so the height never changes
@@ -175,20 +176,30 @@ def compose(
         clean = "".join(ch if ch.isprintable() else " " for ch in strip_ansi(text))
         return "  " + style.paint(fit(clean, w - 2), *codes)
 
+    def status(x: str | tuple[str, str, str]) -> str:
+        if isinstance(x, str):
+            return note(x, *INFO)
+        text, mark, tone = x
+        line = note(text, *INFO)
+        if not (style.color and mark):
+            return line
+        # The mark's reset ends the grey italic too: resume it for the rest of the line.
+        return line.replace(mark, style.paint(mark, BOLD, *TONES.get(tone, ())) + f"\x1b[{';'.join(INFO)}m", 1)
+
     # (group, lines) in keep-priority order; a block that does not fit is skipped whole.
     atoms = [("help", [note(help_text, DIM)])] if help_text else []
     atoms += [("help", [note(hint2, DIM)])] if hint2 else []
     if extra:
         head = f"{THIN} {fit(extra_title, w - 8)} "
-        atoms.append(("status", [note(head + THIN * (w - 2 - width(head)), AMBER), note(extra[0], *INFO)]))
+        atoms.append(("status", [note(head + THIN * (w - 2 - width(head)), AMBER), status(extra[0])]))
     if logo:
         atoms.append(("logo", list(logo)))
     atoms.append(("sep", [note(THIN * (w - 2), AMBER)]))
-    atoms += [("status", [note(x, *INFO)]) for x in extra[1:2]]
+    atoms += [("status", [status(x)]) for x in extra[1:2]]
     if logo and tagline:
         text = fit(tagline, w - 2)  # centred under the logo, which is centred over the panel
         atoms.append(("tagline", [" " * max((w - width(text)) // 2, 2) + style.paint(text, DIM)]))
-    atoms += [("status", [note(x, *INFO)]) for x in extra[2:]]
+    atoms += [("status", [status(x)]) for x in extra[2:]]
     count, start, room = len(items), 0, None
     if lines is not None:
         room = max(lines - 1 - 4, 1)  # top rule, message, hint, bottom rule are fixed

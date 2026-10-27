@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from . import check, config, launchd, workday
 from .i18n import t
@@ -12,6 +13,7 @@ from .i18n import t
 OK_STATES = ("running", "timing", "hidden")  # hidden = Monitask hides its window while timing
 MAX_VACATION_SHOWN = 5
 NEXT_LOOKAHEAD_DAYS = 14
+ACTIVITY_FILE = "activity-today.json"  # under config.home_dir(); activity/fetch.js writes it on every fetch
 
 
 @dataclass(frozen=True)
@@ -19,7 +21,8 @@ class Row:
     key: str     # i18n key suffix of the label, e.g. "workday"
     label: str
     value: str
-    level: str   # ok | warn | info
+    level: str   # ok | warn | info | error
+    mark: str = ""  # the part of value the TUI paints in the level's colour
 
 
 def parse_kv(text: str) -> dict[str, str]:
@@ -127,6 +130,21 @@ def _launchd_row(settings: config.Settings) -> Row:
     return Row("launchd", label, t("status.launchd.loaded"), "ok")
 
 
+def _activity_row(today: date) -> Row | None:
+    """Today's activity rate as last fetched by the optional activity job; None when there is none for today."""
+    try:
+        data = json.loads((config.home_dir() / ACTIVITY_FILE).read_text(encoding="utf-8"))
+        rate = float(data["daily"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if data.get("date") != today.isoformat():
+        return None
+    mark = f"{data['daily']}%"
+    level = "error" if rate < 60 else "warn" if rate < 80 else "ok"  # same tones as activity/fetch.js
+    return Row("activity", t("status.label.activity"),
+               t("status.activity.value", rate=mark, time=data.get("time", "")), level, mark)
+
+
 def snapshot(settings: config.Settings, now: datetime | None = None) -> list[Row]:
     """Status rows, most important first (a small terminal truncates the tail).
 
@@ -145,6 +163,8 @@ def snapshot(settings: config.Settings, now: datetime | None = None) -> list[Row
         state = data.get("state", "unknown")
         rows.append(Row("monitask", t("status.label.monitask"), state_text(state),
                         "ok" if state in OK_STATES else "warn"))
+    if activity := _activity_row(today):
+        rows.append(activity)
 
     last = check.last_check()
     rows.append(Row("last_check", t("status.label.last_check"),
@@ -185,5 +205,10 @@ def snapshot(settings: config.Settings, now: datetime | None = None) -> list[Row
     return rows
 
 
-def status_lines(settings: config.Settings, now: datetime | None = None) -> list[str]:
-    return [f"{r.label}: {r.value}" for r in snapshot(settings, now)]
+def status_lines(settings: config.Settings, now: datetime | None = None) -> list[str | tuple[str, str, str]]:
+    """Plain lines; a row with a mark is (line, mark, level) so the TUI can colour the mark."""
+    lines: list[str | tuple[str, str, str]] = []
+    for r in snapshot(settings, now):
+        line = f"{r.label}: {r.value}"
+        lines.append((line, r.mark, r.level) if r.mark else line)
+    return lines

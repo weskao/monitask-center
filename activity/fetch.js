@@ -105,6 +105,12 @@ function alertLow(a, w, machine, hour, minute) {
       return;
     }
     const { hour, minute } = taipeiParts();
+    // `monitask-center --config` shows the last rate fetched today (monitask_center.status.ACTIVITY_FILE).
+    try {
+      fs.mkdirSync(path.dirname(w.state), { recursive: true });
+      fs.writeFileSync(path.join(path.dirname(w.state), 'activity-today.json'),
+        JSON.stringify({ date: w.iso, time: `${hour}:${minute}`, daily: a.daily }) + '\n');
+    } catch (e) { log(`無法記錄今日活動率：${e.code || e.name}`); }
     const machine = host();
     // c paints the terminal copy; Telegram gets the same lines unpainted.
     const lines = (c) => [

@@ -172,3 +172,29 @@ def test_snapshot_and_status_lines_never_notify(failing_calendar):
     assert r["next"].value
     status.status_lines(Settings(), NOW)
     assert failing_calendar == []
+
+
+def write_activity(date, daily, time="09:20"):
+    path = config.home_dir() / status.ACTIVITY_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"date": date, "time": time, "daily": daily}), encoding="utf-8")
+
+
+@pytest.mark.parametrize(("daily", "level"), [("59.9", "error"), ("64.45", "warn"), ("80", "ok")])
+def test_activity_row_shows_todays_rate_with_its_tone(daily, level):
+    write_activity("2026-10-02", daily)
+    r = rows()["activity"]
+    assert (r.mark, r.level) == (f"{daily}%", level)
+    assert r.value == t("status.activity.value", rate=f"{daily}%", time="09:20")
+    line = status.status_lines(Settings(), NOW)[1]
+    assert line == (f"{t('status.label.activity')}: {r.value}", f"{daily}%", level)
+
+
+@pytest.mark.parametrize("content", [None, '{"date": "2026-10-01", "daily": "70"}', "not json", '{"date": "2026-10-02"}'])
+def test_no_activity_row_without_a_rate_for_today(content):
+    if content is not None:
+        path = config.home_dir() / status.ACTIVITY_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    assert "activity" not in rows()
+    assert all(isinstance(x, str) for x in status.status_lines(Settings(), NOW))

@@ -83,6 +83,8 @@ bash activity/install.sh install
 
 **低活動率提醒：** 活動率排程每 10 分鐘喚醒一次，依 `--config` 的「活動率檢查頻率」(預設每 10 分鐘，從開始時間起算，例如 10:00 開始、每 40 分鐘即 10:00、10:40、11:20…)比對**今日活動**與「活動率提醒門檻」(預設 60%)。低於門檻時發一則 Telegram 提醒，說明今日活動率、門檻與差距、最近紀錄，並提醒確認 Monitask 是否仍在記錄、離座請暫停計時。同一段 10 分鐘紀錄只提醒一次(記在 `~/.monitask-center/activity-alert.json`，送達後才記錄，失敗則下次重試)。只在工作日的開始～結束時間內(含結束整點，午休略過除外)且 Telegram 開啟時檢查；整點報表照舊。只在提醒時段內抓取失敗不會發 Telegram，只寫日誌，避免每 10 分鐘重複告警；`monitask-center activity` 只發報表，不觸發提醒。
 
+**設定畫面的今日活動**：活動率排程每次抓到報表都把今日活動率與時間記在 `~/.monitask-center/activity-today.json`，`monitask-center --config` 的「目前狀態」據此顯示「今日活動: 64.45%(18:20 更新)」，百分比依數值上色(低於 60% 紅、低於 80% 橘、其餘綠，與 `monitask-center activity` 相同)；`monitask-center status` 也會列出(不上色)。今天還沒抓到資料、或沒裝活動率排程時不顯示此行。從舊版升級時需重跑 `bash activity/install.sh install` 把新版排程同步到複本，之後才會開始記錄。
+
 **活動率日誌**：`~/Library/Application Support/MonitaskCenter/activity.out` 記錄每次執行的判斷(是否整點報表、是否檢查低活動率與門檻、未低於門檻、已提醒略過、讀取主設定失敗的原因)、傳送回條，以及 `install.sh` 的同步、搬移與載入紀錄；`activity.err` 是排程本身無法啟動時的錯誤(例如 `Operation not permitted`)。自動搬移的結果另記在 `monitask.log`。
 
 - **執行環境全自動**：全部放在 `~/Library/Application Support/MonitaskCenter/`，不依賴任何 checkout。缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；產生 `MonitaskCenter.app`(內含 python runner)與 launchd 進入點 `run.sh`；runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。

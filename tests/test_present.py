@@ -261,3 +261,14 @@ def test_tagline_is_centred_like_the_logo():
     lead = len(tag) - len(tag.lstrip(" "))
     assert abs((99 - present.width(tag)) - lead) <= 1  # panel is 99 wide at 100 columns
     assert lead == (99 - len("tagline")) // 2 and logo.indent(100, logo.BIG) == (99 - 89) // 2
+
+
+def test_a_marked_status_line_paints_the_mark_in_its_tone_and_resumes_grey():
+    extra = ["s0", ("rate: 64.45% (09:20)", "64.45%", "warn")]
+    out = present.compose("t", [("row", "value", "value")], 0, columns=80, lines=None,
+                          style=present.Style(True), hint="h", extra=extra, extra_title="st")
+    line = next(x for x in out if "64.45%" in x)
+    assert f"\x1b[1;{present.AMBER}m64.45%\x1b[0m\x1b[3;{present.GREY}m (09:20)" in line
+    plain = present.compose("t", [("row", "value", "value")], 0, columns=80, lines=None,
+                            style=present.Style(False), hint="h", extra=extra, extra_title="st")
+    assert "  rate: 64.45% (09:20)" in plain and not any("\x1b" in x for x in plain)

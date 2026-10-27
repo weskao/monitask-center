@@ -47,6 +47,8 @@
   "status.label.accessibility": "自動操作權限(選用)",
   "status.label.monitask": "Monitask",
   "status.label.last_check": "上次檢查",
+  "status.label.activity": "今日活動",
+  "status.activity.value": "{rate}({time} 更新)",
   "status.workday.yes": "工作日",
   "status.workday.no": "非工作日",
   "status.workday.line": "{verdict}({reason})",

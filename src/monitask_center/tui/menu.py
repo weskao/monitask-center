@@ -103,7 +103,7 @@ class State:
             return []
         if self._status is None:
             try:
-                self._status = [str(x) for x in (self.status_source() or [])]
+                self._status = [x if isinstance(x, tuple) else str(x) for x in (self.status_source() or [])]
             except Exception as exc:  # noqa: BLE001 - a status probe must never kill the menu
                 self._status = [t("tui.status.error", error=exc)]
         return self._status
