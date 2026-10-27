@@ -1,3 +1,13 @@
+## [1.9.3] - 2026-10-27
+
+### 🚀 Features
+
+- **activity:** Show today's rate in status
+
+### 🐛 Bug Fixes
+
+- **launchd:** Clarify activity migration errors
+- **status:** Add a space before the activity update time
 ## [1.9.2] - 2026-10-27
 
 ### 🚀 Features
