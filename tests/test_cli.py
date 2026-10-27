@@ -223,4 +223,12 @@ def test_commands_migrate_the_activity_schedule(monkeypatch, capsys):
     monkeypatch.setattr(launchd, "migrate_activity", lambda: "activity moved")
     monkeypatch.setattr(status, "snapshot", lambda s: [])
     assert cli.main(["status"]) == 0
-    assert "activity moved" in capsys.readouterr().err
+    assert capsys.readouterr().err.count("activity moved") == 1
+    assert "activity moved" in (config.data_dir() / "monitask.log").read_text(encoding="utf-8")
+
+
+def test_update_now_migrates_the_activity_job_with_the_new_code(monkeypatch, capsys):
+    # "Update now" runs the old release's _MIGRATE string; only install.migrate and launchd.sync reach new code.
+    monkeypatch.setattr(launchd, "migrate_activity", lambda: "activity moved")
+    exec(cli._MIGRATE, {})
+    assert "activity moved" in capsys.readouterr().out

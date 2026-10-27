@@ -15,8 +15,10 @@ NODE="${MONITASK_ACTIVITY_NODE:-/opt/homebrew/opt/node/bin/node}"
 [ -x "$NODE" ] || NODE="$(command -v node)"
 [ -x "$NODE" ] || { echo "找不到 node"; exit 1; }
 
-# Load the Telegram settings (reuses the clock-in .env: bot token + group chat_id)
-[ -f "$HERE/../.env" ] && set -a && . "$HERE/../.env" && set +a
+# Load the Telegram and activity settings from the main program's .env (install.sh merges the checkout's .env
+# into it): the launchd job may not read a checkout under Documents.
+ENV_FILE="${MONITASK_CENTER_HOME:-$HOME/.monitask-center}/.env"
+[ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
 # A Keychain token (saved by install / --config) wins over .env, the same order monitask_center.telegram uses.
 KEYCHAIN_TOKEN="$(/usr/bin/security find-generic-password -s monitask-center -a telegram_bot_token -w 2>/dev/null)"
 [ -n "$KEYCHAIN_TOKEN" ] && export TG_BOT_TOKEN="$KEYCHAIN_TOKEN"

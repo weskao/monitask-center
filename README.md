@@ -66,7 +66,7 @@ monitask-center install          # 一次完成其餘設定
 
 輔助使用檢查(「自動播放/暫停」或「下班詢問」開啟時)讀取 TCC.db，確認授權已開啟且對應**目前**的 runner(重新簽章會改變 cdhash，舊授權即失效，下班「停止計時」會失敗)。未授權或已失效時，安裝程式會自動執行 `tccutil reset Accessibility com.dannylin.monitask-center` 清掉舊授權、以 app 身分啟動 runner 讓 macOS 列出目前版本並跳出詢問，再開啟「系統設定 → 隱私權與安全性 → 輔助使用」；你只需開啟 MonitaskCenter 的開關(macOS 不允許指令代為開啟)。終端機沒有「完整磁碟存取權」而無法讀取時，只跳出詢問(已授權則不顯示)，不會重設授權。此步驟不等待、也不會讓安裝失敗。
 
-活動率通知使用獨立的 Node.js 排程，需在 checkout 內執行，並沿用 `monitask-center install` 建立的 python 執行環境讀取主設定。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會輸出實際 Node 執行檔路徑，請將該路徑加入「系統設定 → 隱私權與安全性 → 完整磁碟存取權」。macOS 不允許安裝程式自行授予此權限。Node.js 更新後若背景工作再次出現 `EPERM`，請重新加入目前輸出的路徑。
+活動率通知使用獨立的 Node.js 排程，從 checkout 安裝，並沿用 `monitask-center install` 建立的 python 執行環境讀取主設定。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會把排程程式(含 `node_modules` 與讀設定用的 `src/monitask_center`)複製到 `~/Library/Application Support/MonitaskCenter/activity/`(權限 700)，launchd 從那裡執行。macOS 隱私保護會擋下背景工作讀取「文件」「桌面」「下載項目」裡的 checkout，複本不在這些位置，所以**不需要「完整磁碟存取權」**；先前為 Node 加過此權限的，可到「系統設定 → 隱私權與安全性 → 完整磁碟存取權」移除。更新程式(`git pull`、`npm install`)後重跑 `bash activity/install.sh install` 才會同步到複本。
 
 活動率直接請求 Monitask 的 `/Report/TimeSpanPartial` HTML 資料，沿用專用登入 session，不等待網頁渲染。預設自動取得登入者自己的成員 ID，無需 OAuth client 或個人 ID 寫入程式。首次使用需先準備依賴與登入：
 
@@ -77,9 +77,13 @@ bash activity/run.sh login
 bash activity/install.sh install
 ```
 
-個別報表設定可在專案 `.env` 加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。要立即以當下時間發送一次活動率（不受工作時窗限制），執行 `monitask-center activity`（或 `--activity`、`bash activity/run.sh now`）。此端點屬網站內部介面，格式仍可能改動。「最近紀錄」顯示報表中最新一段 10 分鐘的活動率及其起始時間（例如 14:25 傳送時顯示 14:20 那段）；該段尚未滿 10 分鐘時會標出實際分鐘數，計時已停止時則顯示最後一段的時間。
+登入 session 存在 `~/Library/Application Support/MonitaskCenter/activity/profile/`(只有一份，從 checkout 或複本執行 `login` 都寫到這裡)。
+
+個別報表設定可在 `~/.monitask-center/.env`(權限 600)加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。安裝時會把專案 `.env` 裡的 `MONITASK_ACTIVITY_*`、`TG_CHAT_ID` 合併進去(不覆寫既有值；`TG_BOT_TOKEN` 只在 Keychain 沒有 token 時才複製)。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `~/.monitask-center/.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。要立即以當下時間發送一次活動率（不受工作時窗限制），執行 `monitask-center activity`（或 `--activity`、`bash activity/run.sh now`）。此端點屬網站內部介面，格式仍可能改動。「最近紀錄」顯示報表中最新一段 10 分鐘的活動率及其起始時間（例如 14:25 傳送時顯示 14:20 那段）；該段尚未滿 10 分鐘時會標出實際分鐘數，計時已停止時則顯示最後一段的時間。
 
 **低活動率提醒：** 活動率排程每 10 分鐘喚醒一次，依 `--config` 的「活動率檢查頻率」(預設每 10 分鐘，從開始時間起算，例如 10:00 開始、每 40 分鐘即 10:00、10:40、11:20…)比對**今日活動**與「活動率提醒門檻」(預設 60%)。低於門檻時發一則 Telegram 提醒，說明今日活動率、門檻與差距、最近紀錄，並提醒確認 Monitask 是否仍在記錄、離座請暫停計時。同一段 10 分鐘紀錄只提醒一次(記在 `~/.monitask-center/activity-alert.json`，送達後才記錄，失敗則下次重試)。只在工作日的開始～結束時間內(含結束整點，午休略過除外)且 Telegram 開啟時檢查；整點報表照舊。只在提醒時段內抓取失敗不會發 Telegram，只寫日誌，避免每 10 分鐘重複告警；`monitask-center activity` 只發報表，不觸發提醒。
+
+**活動率日誌**：`~/Library/Application Support/MonitaskCenter/activity.out` 記錄每次執行的判斷(是否整點報表、是否檢查低活動率與門檻、未低於門檻、已提醒略過、讀取主設定失敗的原因)、傳送回條，以及 `install.sh` 的同步、搬移與載入紀錄；`activity.err` 是排程本身無法啟動時的錯誤(例如 `Operation not permitted`)。自動搬移的結果另記在 `monitask.log`。
 
 - **執行環境全自動**：全部放在 `~/Library/Application Support/MonitaskCenter/`，不依賴任何 checkout。缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；產生 `MonitaskCenter.app`(內含 python runner)與 launchd 進入點 `run.sh`；runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)或下班停止計時，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`(`install` 會檢查並引導，見上)；未授權時動作會回報失敗並通知、結果寫入 `monitask.log`，且 runner 會請 macOS 重新跳出授權詢問，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。
@@ -214,8 +218,8 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | `src/monitask_center/locales/<lang>/*.json` | 各語言文字(目前 `zh-TW`) |
 | `tests/` | pytest 測試(含 i18n 守門) |
 | `docs/images/` | README 用的截圖：`config-menu.jpeg`(設定選單)、`telegram-notification.jpeg`(活動率通知) |
-| `activity/` | 活動率監控，**獨立的選用功能**，有自己的 launchd job；讀主設定時使用 `~/Library/Application Support/MonitaskCenter/` 的 python 與 `pylibs` |
-| `.env` | 活動率監控的設定(`activity/run.sh` 讀取，不入版控) |
+| `activity/` | 活動率監控，**獨立的選用功能**，有自己的 launchd job；`install.sh` 把它複製到 `~/Library/Application Support/MonitaskCenter/activity/` 執行，讀主設定時使用同目錄的 python 與 `pylibs` |
+| `.env` | 舊版活動率設定；安裝活動率排程時合併進 `~/.monitask-center/.env`(不入版控) |
 | `~/.monitask-center/.env` | 僅在無認證存放區時的後備：`TG_BOT_TOKEN` + `TG_CHAT_ID` |
 | `~/.monitask-center/config.json` | 使用者設定(單一檔案，不放在專案目錄) |
 | `~/.monitask-center/last-check.json` | 上次檢查結果 |
@@ -256,4 +260,5 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 - **執行環境不在 checkout 裡**：launchd 執行 `~/Library/Application Support/MonitaskCenter/run.sh`，它指向目前安裝的 `monitask_center` 套件(git 標籤安裝時在 uv tool venv，editable 安裝時在 checkout 的 `src/`)。換了安裝方式或 venv 的 Python 版本，任何 CLI 指令(`install`/`uninstall` 除外)都會重寫 `run.sh`。
 - **從 1.5.0 以前升級**：舊版的 job 從 checkout 執行。新版在「立即更新」的同步步驟，或任何 CLI 指令(`install`/`uninstall` 除外)時，會把 `MonitaskCenter.app`(保留 Accessibility 授權)、`pylibs`、`.env` 從 checkout 複製到上述目錄，產生 `run.sh`，再把 job 改指向它。若 `git pull` 已刪掉 checkout 內的 bundle，會用 Homebrew 的 python 重建並重新簽章，這時可能需要重新授予 Accessibility。整點 `check` 無法自行搬移(它本身就從舊位置執行)，所以 `git pull` 之後請執行任一 `monitask-center` 指令。
 - **低活動率提醒的排程升級**：舊版 `activity/install.sh` 裝的活動率 job 每小時喚醒一次。新版的整點 `check` 或任何 CLI 指令(`install`/`uninstall` 除外)會自動把它改成每 10 分鐘(只改排程，保留 Node 路徑與 checkout 位置)；沒裝活動率排程時不做任何事。失敗時會提示在 checkout 重跑 `bash activity/install.sh install`。
+- **活動率排程搬出 checkout(1.9.1 以前升級)**：舊版的活動率 job 直接執行 checkout 裡的 `activity/run.sh`，checkout 在「文件」等受保護位置時，launchd 會得到 `Operation not permitted`，整點報表與低活動率提醒都不會發出。新版在「立即更新」的同步步驟或任何 CLI 指令(`install`/`uninstall` 除外)時，以 job 原本的 Node 執行該 checkout 的 `bash activity/install.sh sync`：複製程式到 `~/Library/Application Support/MonitaskCenter/activity/`、搬移登入 session、合併 `.env`、把 job 改指向複本(第二次執行不做任何事)。整點 `check` 在 launchd 下通常讀不到 checkout，只會在 `monitask.log` 記一行失敗原因，下次在終端機執行任一指令時完成搬移。checkout 還沒 `git pull` 到有 `sync` 的版本時，提示先更新 checkout 再執行 `bash activity/install.sh install`。
 - 開發時用 `make install`(editable)：修改程式碼不需重新安裝；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。

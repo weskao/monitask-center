@@ -8,7 +8,13 @@ const HERE = __dirname;
 const CONFIG = JSON.parse(fs.readFileSync(path.join(HERE, 'config.json'), 'utf8'));
 CONFIG.memberId = process.env.MONITASK_ACTIVITY_MEMBER_ID || CONFIG.memberId || '';
 CONFIG.timeOffSet = process.env.MONITASK_ACTIVITY_TIMEZONE || CONFIG.timeOffSet;
-const PROFILE_DIR = path.join(HERE, 'profile');
+// The runtime `monitask-center install` builds; install.sh copies this job into RUNTIME/activity, outside the
+// folders macOS privacy protection guards (Documents, Desktop, ...), so launchd needs no Full Disk Access.
+const RUNTIME = path.join(require('os').homedir(), 'Library/Application Support/MonitaskCenter');
+// One login session for the checkout and the installed copy alike.
+const PROFILE_DIR = path.join(RUNTIME, 'activity', 'profile');
+// The installed copy carries its own src/ (install.sh); a checkout run uses the checkout's.
+const SRC = fs.existsSync(path.join(HERE, 'src')) ? path.join(HERE, 'src') : path.join(HERE, '..', 'src');
 
 function taipeiParts() {
   const fmt = new Intl.DateTimeFormat('en-CA', {
@@ -28,7 +34,6 @@ function isoOf(y, m, d) { return `${y}-${m}-${d}`; }
 function workWindow() {
   const { year, month, day, hour, minute } = taipeiParts();
   const iso = isoOf(year, month, day);
-  const root = path.join(HERE, '..');
   // Reuse the timer checker's settings and holiday calendar, not a second schedule.
   // A tick counts within 5 minutes of its slot, so a slightly late launchd start still runs.
   // Alert checks are counted from the start hour, so 40 / 50 minutes keep their spacing across hours.
@@ -48,12 +53,11 @@ if ok or alert:
     ok, alert = ok and workday_ok, alert and workday_ok
 print(json.dumps({"ok": ok, "alert": alert, "shift": reason, "threshold": s.activity_alert_percent,
                   "state": str(config.home_dir() / "activity-alert.json")}))`;
-  // The runtime `monitask-center install` builds: its python copy, plus pylibs for telegram-kit.
-  const runtime = path.join(require('os').homedir(), 'Library/Application Support/MonitaskCenter');
+  // The runtime's python copy, plus pylibs for telegram-kit.
   const python = process.env.MONITASK_ACTIVITY_PYTHON
-    || path.join(runtime, 'MonitaskCenter.app/Contents/MacOS/python-runner');
+    || path.join(RUNTIME, 'MonitaskCenter.app/Contents/MacOS/python-runner');
   const result = execFileSync(python, ['-c', script, iso, hour, minute], { encoding: 'utf8', timeout: 15000,
-    env: { ...process.env, PYTHONPATH: `${path.join(root, 'src')}:${path.join(runtime, 'pylibs')}` } });
+    env: { ...process.env, PYTHONPATH: `${SRC}:${path.join(RUNTIME, 'pylibs')}` } });
   return { ...JSON.parse(result), iso, reportDate: `${month}/${day}/${year}` };
 }
 

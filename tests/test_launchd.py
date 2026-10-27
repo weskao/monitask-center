@@ -282,12 +282,12 @@ def test_unchecked_launchctl_child_stderr_never_reaches_terminal(monkeypatch, ca
     assert capfd.readouterr() == ("", "")
 
 
-def _activity_plist(ticks):
+def _activity_plist(ticks, script=None):
     path = launchd.plist_path("activity")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(plistlib.dumps({
         "Label": "com.monitask-center.activity",
-        "ProgramArguments": ["/bin/bash", "/checkout/activity/run.sh", "fetch"],
+        "ProgramArguments": ["/bin/bash", str(script or launchd.activity_runner()), "fetch"],
         "EnvironmentVariables": {"MONITASK_ACTIVITY_NODE": "/opt/node"},
         "StartCalendarInterval": ticks,
     }))
@@ -310,7 +310,7 @@ def test_migrate_activity_moves_the_job_to_ten_minute_ticks_once(calls, old_tick
     assert launchd.migrate_activity() == t("launchd.activity.migrated")
     spec = plistlib.loads(path.read_bytes())
     assert spec["StartCalendarInterval"] == launchd.ACTIVITY_TICKS
-    assert spec["ProgramArguments"][1] == "/checkout/activity/run.sh"
+    assert spec["ProgramArguments"][1] == str(launchd.activity_runner())
     assert spec["EnvironmentVariables"] == {"MONITASK_ACTIVITY_NODE": "/opt/node"}
     assert [c[0] for c in calls] == ["bootout", "bootstrap"]
     calls.clear()
@@ -326,6 +326,60 @@ def test_migrate_activity_failure_is_a_message(monkeypatch):
 
     monkeypatch.setattr(launchd, "_launchctl", fail)
     assert "Bootstrap failed" in launchd.migrate_activity()
+
+
+def _checkout_installer(tmp_path, body):
+    installer = tmp_path / "checkout/activity/install.sh"
+    installer.parent.mkdir(parents=True)
+    installer.write_text(body)
+    return installer
+
+
+def test_migrate_activity_moves_a_checkout_job_onto_the_copy_once(tmp_path, calls):
+    # Pre-upgrade state: the job runs the checkout (unreadable to launchd under Documents).
+    installer = _checkout_installer(tmp_path, f'''#!/bin/bash
+echo "$* $MONITASK_ACTIVITY_NODE" >> "{tmp_path}/sync.log"
+python3 - <<'PY'
+import plistlib, pathlib
+p = pathlib.Path("{launchd.plist_path("activity")}")
+spec = plistlib.loads(p.read_bytes())
+spec["ProgramArguments"][1] = "{launchd.activity_runner()}"
+p.write_bytes(plistlib.dumps(spec))
+PY
+''')
+    _activity_plist([{"Minute": 0}], installer.parent / "run.sh")
+    assert launchd.migrate_activity() == t("launchd.activity.moved", path=launchd.activity_runner().parent)
+    assert (tmp_path / "sync.log").read_text() == "sync /opt/node\n"  # the job's own Node, non-interactive
+    assert launchd.runner("activity") == str(launchd.activity_runner())
+    # Second run: already on the copy and on ACTIVITY_TICKS would be next; nothing to move again.
+    path = launchd.plist_path("activity")
+    spec = plistlib.loads(path.read_bytes())
+    path.write_bytes(plistlib.dumps({**spec, "StartCalendarInterval": launchd.ACTIVITY_TICKS}))
+    assert launchd.migrate_activity() is None and calls == []
+    assert (tmp_path / "sync.log").read_text() == "sync /opt/node\n"
+
+
+@pytest.mark.parametrize("body,code,detail", [
+    # the hourly check under launchd: macOS privacy protection refuses the checkout
+    ("#!/bin/bash\necho 'install.sh: Operation not permitted' >&2; exit 126\n",
+     126, "install.sh: Operation not permitted"),
+    # a checkout older than the sync command
+    ("#!/bin/bash\necho 'usage: install.sh {install|uninstall|reload|status}' >&2; exit 2\n",
+     2, "usage: install.sh {install|uninstall|reload|status}"),
+    ("#!/bin/bash\nexit 0\n", 1, ""),  # claims success but the job still runs the checkout
+])
+def test_migrate_activity_move_failure_is_a_message(tmp_path, calls, body, code, detail):
+    installer = _checkout_installer(tmp_path, body)
+    path = _activity_plist([{"Minute": 0}], installer.parent / "run.sh")
+    before = path.read_bytes()
+    error = launchd.describe_error(launchd.LaunchdError(code, [], detail))
+    assert launchd.migrate_activity() == t("launchd.err.activity_move", error=error)
+    assert path.read_bytes() == before and calls == []
+
+
+def test_migrate_activity_without_the_checkout_is_a_message(tmp_path, calls):
+    _activity_plist([{"Minute": 0}], tmp_path / "gone/activity/run.sh")
+    assert launchd.migrate_activity().startswith(t("launchd.err.activity_move", error="")[:20])
 
 
 def test_migrate_activity_ignores_an_unreadable_plist(calls):

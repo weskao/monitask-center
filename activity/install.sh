@@ -1,11 +1,13 @@
 #!/bin/bash
 # install.sh — launchd job for activity-rate monitoring (wakes every 10 minutes; fetch reuses the main program's settings
 # to pick the hourly report and the low activity checks, see launchd.ACTIVITY_TICKS).
-#   ./install.sh install | uninstall | reload | status
+#   ./install.sh install | sync | uninstall | reload | status
+# The job runs a copy in ~/Library/Application Support/MonitaskCenter/activity: macOS privacy protection stops a
+# launchd job reading a checkout under Documents/Desktop/Downloads, and the copy needs no Full Disk Access.
+# sync = non-interactive install, run by `monitask-center`'s upgrade migration (launchd.migrate_activity).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-RUNNER="$HERE/run.sh"
 LA="$HOME/Library/LaunchAgents"
 LABEL="com.monitask-center.activity"
 LEGACY_LABELS=(
@@ -14,11 +16,21 @@ LEGACY_LABELS=(
 )
 UID_N="$(id -u)"
 LOGDIR="$HOME/Library/Application Support/MonitaskCenter"
+ACT="$LOGDIR/activity"
+RUNNER="$ACT/run.sh"
+CENTER_HOME="${MONITASK_CENTER_HOME:-$HOME/.monitask-center}"
 PLIST="$LA/$LABEL.plist"
+
+# Printed for the person running it, and kept with a timestamp in the job's own log (activity.out) for later.
+log() {
+  echo "  $*"
+  { mkdir -p "$LOGDIR" && printf '[%s] install.sh: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOGDIR/activity.out"; } \
+    2>/dev/null || true
+}
 
 ensure_node() {
   [ "$(uname -s)" = Darwin ] || { echo "活動率排程安裝僅支援 macOS。" >&2; exit 1; }
-  local brew candidate node_full_path
+  local brew candidate
   brew="$(command -v brew || true)"
   for candidate in "$brew" /opt/homebrew/bin/brew /usr/local/bin/brew; do
     if [ -n "$candidate" ] && [ -x "$candidate" ]; then
@@ -36,16 +48,52 @@ ensure_node() {
   NODE_PATH="$("$brew" --prefix node)/bin/node"
   [ -x "$NODE_PATH" ] || { echo "Homebrew 安裝後仍找不到 Node.js：$NODE_PATH" >&2; exit 1; }
   "$NODE_PATH" --version
-  node_full_path="$(realpath "$NODE_PATH")"
-  echo "Node.js: $node_full_path"
-  cat <<EOF
-請將此 Node 路徑加入「系統設定 → 隱私權與安全性 → 完整磁碟存取權」並啟用：
-  $node_full_path
-操作：按「＋」→ 按 ⌘⇧G → 貼上上方完整路徑。
-此權限須由本人手動授予；Node 更新後若出現 EPERM，請重新加入目前的路徑。
-授權完成後執行一次排程（工作時窗內會發送 Telegram）：
-  launchctl kickstart -k "gui/$UID_N/$LABEL"
-EOF
+  echo "Node.js: $(realpath "$NODE_PATH")"
+}
+
+# Keys the job reads from the checkout's .env, merged into the main program's .env (owner-only) without
+# overwriting what is there. Only key names are logged. The bot token is copied only when the Keychain has none.
+merge_env() {
+  local src="$HERE/../.env" dst="$CENTER_HOME/.env" line key added=""
+  [ -f "$src" ] || return 0
+  mkdir -p "$CENTER_HOME"
+  [ -f "$dst" ] || (umask 077 && : > "$dst")
+  chmod 600 "$dst"
+  while IFS= read -r line || [ -n "$line" ]; do
+    key="${line%%=*}"
+    case "$key" in
+      TG_CHAT_ID|MONITASK_ACTIVITY_*) ;;
+      TG_BOT_TOKEN)
+        /usr/bin/security find-generic-password -s monitask-center -a telegram_bot_token >/dev/null 2>&1 && continue ;;
+      *) continue ;;
+    esac
+    grep -q "^$key=" "$dst" && continue
+    printf '%s\n' "$line" >> "$dst"
+    added="$added $key"
+  done < "$src"
+  [ -z "$added" ] || log "已將 .env 設定合併到 ${dst}：$added"
+}
+
+# Copy the job (code, node_modules, the python package it reads the settings with) out of the checkout and
+# move the login session along once; the session is never copied, so only one copy of it exists.
+sync_runtime() {
+  [ -d "$HERE/../src/monitask_center" ] || { echo "找不到 $HERE/../src/monitask_center" >&2; exit 1; }
+  mkdir -p "$ACT/src"
+  /usr/bin/rsync -a --delete --exclude profile --exclude src --exclude install.sh --exclude .DS_Store \
+    "$HERE/" "$ACT/"
+  chmod 700 "$ACT"  # after rsync, which gives it the checkout folder's mode; it holds the login session
+  /usr/bin/rsync -a --delete --exclude __pycache__ "$HERE/../src/monitask_center/" "$ACT/src/monitask_center/"
+  log "已同步活動率程式：$HERE → $ACT"
+  if [ -d "$HERE/profile" ]; then
+    if [ -e "$ACT/profile" ]; then
+      log "⚠️ 兩處都有登入 session，沿用 $ACT/profile；確認後可自行刪除 $HERE/profile"
+    else
+      mv "$HERE/profile" "$ACT/profile"
+      chmod 700 "$ACT/profile"
+      log "已搬移登入 session：$HERE/profile → $ACT/profile"
+    fi
+  fi
+  merge_env
 }
 
 cleanup_legacy() {
@@ -92,33 +140,55 @@ PLIST
   echo "  wrote $PLIST"
 }
 
+load_job() {
+  launchctl bootout "gui/$UID_N" "$PLIST" 2>/dev/null || true
+  if launchctl bootstrap "gui/$UID_N" "$PLIST"; then
+    log "已載入 ${LABEL}（執行 ${RUNNER}）"
+  else
+    log "❌ 載入 $LABEL 失敗"
+    exit 1
+  fi
+}
+
 do_install() {
-  [ -f "$RUNNER" ] || { echo "找不到 run.sh：$RUNNER"; exit 1; }
+  [ -f "$HERE/run.sh" ] || { echo "找不到 run.sh：$HERE/run.sh"; exit 1; }
   ensure_node
+  sync_runtime
+  echo "  活動率排程從 $ACT 執行，不需要「完整磁碟存取權」；先前若為 Node 加過此權限，可到系統設定移除。"
   echo "  活動率沿用登入 session，自動取得本人報表的成員 ID。"
-  echo "  個別設定：$HERE/../.env（範例：.env.example）"
+  echo "  個別設定：$CENTER_HOME/.env（範例：$HERE/../.env.example）"
   echo "  MONITASK_ACTIVITY_TIMEZONE：Windows 時區名稱；MONITASK_ACTIVITY_MEMBER_ID：選填指定成員。"
-  echo "  首次使用／登入過期：bash \"$HERE/run.sh\" login"
-  echo "  首次使用先準備依賴：npm --prefix \"$HERE\" install"
-  echo "  安裝瀏覽器：npm --prefix \"$HERE\" exec -- playwright install chromium"
-  [ -d "$HERE/profile" ] || echo "  ⚠️ 尚未登入（profile/ 不存在）。先跑 ./run.sh login。"
+  echo "  首次使用／登入過期：bash \"$RUNNER\" login"
+  echo "  程式更新（git pull、npm install）後重跑：bash \"$HERE/install.sh\" install"
+  [ -d "$ACT/profile" ] || echo "  ⚠️ 尚未登入（$ACT/profile 不存在）。先跑 bash \"$RUNNER\" login。"
   cleanup_legacy
   gen_plist
-  launchctl bootout "gui/$UID_N" "$PLIST" 2>/dev/null || true
-  launchctl bootstrap "gui/$UID_N" "$PLIST" && echo "  loaded $LABEL"
+  load_job
   echo "完成。"
+}
+
+do_sync() {
+  NODE_PATH="${MONITASK_ACTIVITY_NODE:-}"
+  [ -x "$NODE_PATH" ] || ensure_node
+  sync_runtime
+  cleanup_legacy
+  gen_plist
+  load_job
 }
 
 do_uninstall() {
   launchctl bootout "gui/$UID_N" "$PLIST" 2>/dev/null || true
-  rm -f "$PLIST" && echo "  removed $LABEL"
+  rm -f "$PLIST" && log "已移除 $LABEL"
   cleanup_legacy
+  [ -d "$ACT" ] && echo "  程式與登入 session 仍保留在 ${ACT}，不再使用可自行刪除。"
+  return 0
 }
 
 case "${1:-}" in
   install)   do_install ;;
+  sync)      do_sync ;;
   uninstall) do_uninstall ;;
   reload)    do_uninstall; do_install ;;
   status)    launchctl list | grep "$LABEL" || echo "（未載入）" ;;
-  *) echo "usage: $0 {install|uninstall|reload|status}" >&2; exit 2 ;;
+  *) echo "usage: $0 {install|sync|uninstall|reload|status}" >&2; exit 2 ;;
 esac

@@ -48,7 +48,7 @@ function latestText(a, c = (text) => text) {
 // Below the threshold: one explained alert per tracked slot; the slot is remembered only once delivered.
 function alertLow(a, w, machine, hour, minute) {
   const daily = Number(a.daily);
-  if (!(daily < w.threshold)) return;
+  if (!(daily < w.threshold)) { log(`活動率 ${a.daily}% 未低於提醒門檻 ${w.threshold}%，不提醒`); return; }
   const slot = `${w.iso} ${a.latest ? a.latest.time : ''}`;
   let last = null;
   try { last = JSON.parse(fs.readFileSync(w.state, 'utf8')).slot; } catch (e) { /* first alert */ }
@@ -70,10 +70,20 @@ function alertLow(a, w, machine, hour, minute) {
 }
 
 (async () => {
-  const w = workWindow();
+  let w;
+  try {
+    w = workWindow();
+  } catch (error) {
+    // The python side's last stderr line names the cause (e.g. a missing module), never a credential.
+    const detail = String(error.stderr || error.message || error.name).trim().split('\n').pop();
+    log(`讀取主設定失敗：${detail}`);
+    process.exitCode = 1;
+    return;
+  }
   const report = w.ok || FORCE;
   const alert = Boolean(w.alert) && !FORCE;
   if (!report && !alert) { log(`非工作時窗（今日=${w.shift}），略過`); return; }
+  if (!TTY) log(`本次執行：整點報表=${report ? '是' : '否'} 低活動率檢查=${alert ? `是（門檻 ${w.threshold}%）` : '否'}`);
 
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: true,

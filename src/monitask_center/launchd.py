@@ -216,15 +216,29 @@ def install_missing(settings: config.Settings) -> str | None:
         return t("launchd.err.migrate", error=describe_error(exc))
 
 
+def activity_runner() -> Path:
+    """The run.sh the activity job runs: the copy activity/install.sh makes outside the checkout."""
+    return config.data_dir() / "activity/run.sh"
+
+
 def migrate_activity() -> str | None:
-    """Upgrade migration: move an activity job on any other schedule (hourly, before low activity
-    alerts) onto ACTIVITY_TICKS. Only the schedule changes; never installs the job. -> a line to log/print, or None."""
+    """Upgrade migrations of the optional activity job; never installs it. -> a line to log/print, or None.
+
+    A job still running its checkout (1.9.1 and older) moves onto activity_runner() via that checkout's
+    `install.sh sync`: macOS privacy protection stops launchd reading a checkout under Documents. The hourly
+    check usually cannot read the checkout either, so the move then happens on the next CLI command.
+    A job on any other schedule (hourly, before low activity alerts) moves onto ACTIVITY_TICKS."""
     path = plist_path("activity")
     try:
         spec = plistlib.loads(path.read_bytes())
     except (OSError, ValueError, plistlib.InvalidFileException):
         return None
-    if not isinstance(spec, dict) or spec.get("StartCalendarInterval") == ACTIVITY_TICKS:
+    if not isinstance(spec, dict):
+        return None
+    script = runner("activity")
+    if script and script != str(activity_runner()):
+        return _move_activity(spec, Path(script).parent / "install.sh")
+    if spec.get("StartCalendarInterval") == ACTIVITY_TICKS:
         return None
     try:
         path.write_bytes(plistlib.dumps({**spec, "StartCalendarInterval": ACTIVITY_TICKS}))
@@ -233,6 +247,24 @@ def migrate_activity() -> str | None:
     except (subprocess.CalledProcessError, OSError) as exc:
         return t("launchd.err.activity", error=describe_error(exc))
     return t("launchd.activity.migrated")
+
+
+def _move_activity(spec: dict, installer: Path) -> str:
+    """Run the checkout's `install.sh sync` (it logs the details to activity.out) with the job's Node."""
+    env = dict(os.environ)
+    node = (spec.get("EnvironmentVariables") or {}).get("MONITASK_ACTIVITY_NODE")
+    if isinstance(node, str) and node:
+        env["MONITASK_ACTIVITY_NODE"] = node
+    cmd = ["/bin/bash", str(installer), "sync"]
+    try:
+        r = subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                           errors="replace", timeout=300, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return t("launchd.err.activity_move", error=describe_error(exc))
+    if r.returncode == 0 and runner("activity") == str(activity_runner()):
+        return t("launchd.activity.moved", path=activity_runner().parent)
+    return t("launchd.err.activity_move",
+             error=describe_error(LaunchdError(r.returncode or 1, cmd, _first_line(r.stderr or r.stdout))))
 
 
 def sync_message(state: str, jobs: list[str]) -> str:

@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-from . import __version__, config, i18n, install, launchd, status, update_check
+from . import __version__, config, i18n, install, launchd, notify, status, update_check
 from .i18n import t
 
 COMMANDS = ("install", "uninstall", "status", "plan", "check", "dump-windows", "logs", "update", "activity")
@@ -253,12 +253,12 @@ def _main(raw: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(raw)
     if args.command not in ("install", "uninstall", *EXEC_COMMANDS):  # check migrates under launchd
-        if note := install.migrate(config.load()):  # before install_missing: it builds the runtime
-            print(note, file=sys.stderr)
-        if note := launchd.install_missing(config.load()):
-            print(note, file=sys.stderr)
-        if note := launchd.migrate_activity():
-            print(note, file=sys.stderr)
+        # install.migrate first: it builds the runtime install_missing needs (and moves the activity job).
+        # Notes also go to monitask.log, like the hourly check's, so an upgrade stays traceable later.
+        for migrate in (lambda: install.migrate(config.load()), lambda: launchd.install_missing(config.load())):
+            if note := migrate():
+                print(note, file=sys.stderr)
+                notify.log(note)
     if args.config:
         return cmd_config()
     match args.command:

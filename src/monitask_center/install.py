@@ -354,7 +354,13 @@ def ensure_runtime(p: Paths | None = None) -> bool:
 
 
 def migrate(settings: config.Settings) -> str | None:
-    """Upgrade migration (any CLI command, and "Update now"): launchd jobs run data_dir()/run.sh.
+    """Upgrade migrations (any CLI command, and "Update now", which reaches new code only through here):
+    the runtime below, then launchd.migrate_activity. -> lines to print when something was done, else None."""
+    return "\n".join(note for note in (_migrate_runtime(settings), launchd.migrate_activity()) if note) or None
+
+
+def _migrate_runtime(settings: config.Settings) -> str | None:
+    """launchd jobs run data_dir()/run.sh.
 
     1.5.0 and older ran them from the checkout. Costs a few stats and two plist reads when there is
     nothing to do; never raises. -> a line to print when it did something, else None."""

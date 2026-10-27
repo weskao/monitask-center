@@ -135,8 +135,20 @@ const request = {get: async (url) => {
     assert json.loads(result.stdout) == expected
 
 
+def _checkout(tmp_path) -> Path:
+    """A throwaway checkout: install.sh moves profile/, so it must never run against the real one."""
+    repo = tmp_path / "checkout"
+    (repo / "activity").mkdir(parents=True)
+    for name in ("install.sh", "run.sh", "fetch.js", "lib.js", "login.js", "config.json", "package.json"):
+        shutil.copy2(ROOT / "activity" / name, repo / "activity" / name)
+    shutil.copytree(ROOT / "src/monitask_center", repo / "src/monitask_center",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    return repo
+
+
 @pytest.mark.parametrize("existing,install_fails", [(True, False), (False, False), (False, True)])
 def test_activity_install_prepares_node_before_loading_job(tmp_path, existing, install_fails):
+    repo = _checkout(tmp_path)
     tools = tmp_path / "tools"
     tools.mkdir()
     node = tmp_path / "Cellar/node/test-version/bin/node"
@@ -165,31 +177,106 @@ esac
         path.write_text(body)
         path.chmod(0o755)
     log = tmp_path / "commands.log"
-    result = subprocess.run(["/bin/bash", str(ROOT / "activity/install.sh"), "install"],
+    result = subprocess.run(["/bin/bash", str(repo / "activity/install.sh"), "install"],
                             env={**os.environ, "HOME": str(tmp_path),
+                                 "MONITASK_CENTER_HOME": str(tmp_path / ".monitask-center"),
                                  "PATH": f"{tools}:/usr/bin:/bin", "TEST_NODE": str(node),
                                  "TEST_INSTALL_FAILS": str(install_fails), "TEST_LOG": str(log)},
                             capture_output=True, text=True)
     plist = tmp_path / "Library/LaunchAgents/com.monitask-center.activity.plist"
+    runner = tmp_path / "Library/Application Support/MonitaskCenter/activity/run.sh"
     if install_fails:
         assert result.returncode != 0
-        assert not plist.exists() and not log.exists()
+        assert not plist.exists() and not log.exists() and not runner.exists()
     else:
         assert result.returncode == 0, result.stderr
         spec = plistlib.loads(plist.read_bytes())
         assert spec["StartCalendarInterval"] == launchd.ACTIVITY_TICKS
         assert spec["EnvironmentVariables"]["MONITASK_ACTIVITY_NODE"] == str(node)
-        assert str(node.resolve()) in result.stdout and "完整磁碟存取權" in result.stdout
+        assert spec["ProgramArguments"] == ["/bin/bash", str(runner), "fetch"]  # the copy, not the checkout
+        assert str(node.resolve()) in result.stdout and "不需要「完整磁碟存取權」" in result.stdout
         assert "bootstrap" in log.read_text()
         assert ("installed" in log.read_text()) is (not existing)
-        runner = tmp_path / "activity/run.sh"
-        runner.parent.mkdir()
-        shutil.copy(ROOT / "activity/run.sh", runner)
         fetched = subprocess.run(["/bin/bash", str(runner), "fetch"],
                                  env={**os.environ, "HOME": str(tmp_path),
                                       "MONITASK_ACTIVITY_NODE": str(node)},
                                  capture_output=True, text=True)
         assert fetched.returncode == 0 and fetched.stdout.strip() == "v22.0.0"
+
+
+def _sync(repo: Path, home: Path, launchctl_fails: bool = False) -> subprocess.CompletedProcess:
+    tools = home / "tools"
+    tools.mkdir(exist_ok=True)
+    (tools / "launchctl").write_text(f"#!/bin/sh\n[ \"$1\" = bootstrap ] && exit {int(launchctl_fails)}\nexit 0\n")
+    (tools / "launchctl").chmod(0o755)
+    node = home / "node"
+    node.write_text("#!/bin/sh\necho v22.0.0\n")
+    node.chmod(0o755)
+    return subprocess.run(["/bin/bash", str(repo / "activity/install.sh"), "sync"],
+                          env={**os.environ, "HOME": str(home),
+                               "MONITASK_CENTER_HOME": str(home / ".monitask-center"),
+                               "PATH": f"{tools}:/usr/bin:/bin", "MONITASK_ACTIVITY_NODE": str(node)},
+                          capture_output=True, text=True)
+
+
+def test_activity_sync_moves_the_job_out_of_the_checkout_once(tmp_path):
+    repo, home = _checkout(tmp_path), tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    (repo / "activity/node_modules/playwright").mkdir(parents=True)
+    (repo / "activity/node_modules/playwright/index.js").write_text("// stub\n")
+    (repo / "activity/profile/Default").mkdir(parents=True)
+    (repo / "activity/profile/Default/Cookies").write_text("session")
+    (repo / ".env").write_text("TG_CHAT_ID=-100123\nMONITASK_ACTIVITY_TIMEZONE=\"Pacific Standard Time\"\n"
+                               "MONITASK_ACTIVITY_MEMBER_ID=from-checkout\nUNRELATED=1\n")
+    center = home / ".monitask-center"
+    center.mkdir()
+    (center / ".env").write_text("MONITASK_ACTIVITY_MEMBER_ID=kept\n")
+    act = home / "Library/Application Support/MonitaskCenter/activity"
+
+    first = _sync(repo, home)
+    assert first.returncode == 0, first.stderr
+    assert (act / "run.sh").is_file() and (act / "node_modules/playwright/index.js").is_file()
+    assert (act / "src/monitask_center/config.py").is_file() and not (act / "install.sh").exists()
+    # The login session is moved, never copied, and stays owner-only.
+    assert (act / "profile/Default/Cookies").read_text() == "session" and not (repo / "activity/profile").exists()
+    assert oct(act.stat().st_mode & 0o777) == oct((act / "profile").stat().st_mode & 0o777) == "0o700"
+    env = center / ".env"
+    assert env.read_text() == ("MONITASK_ACTIVITY_MEMBER_ID=kept\nTG_CHAT_ID=-100123\n"
+                               "MONITASK_ACTIVITY_TIMEZONE=\"Pacific Standard Time\"\n")
+    assert oct(env.stat().st_mode & 0o777) == "0o600"
+    plist = plistlib.loads((home / "Library/LaunchAgents/com.monitask-center.activity.plist").read_bytes())
+    assert plist["ProgramArguments"][1] == str(act / "run.sh")
+    logged = (home / "Library/Application Support/MonitaskCenter/activity.out").read_text()
+    assert "已同步活動率程式" in logged and "已搬移登入 session" in logged and "TG_CHAT_ID" in logged
+    assert "-100123" not in logged  # key names only, never values
+
+    # Second run: nothing left to move or merge; a file removed from the checkout leaves the copy too.
+    (repo / "activity/login.js").unlink()
+    again = _sync(repo, home)
+    assert again.returncode == 0, again.stderr
+    assert env.read_text().count("TG_CHAT_ID") == 1 and not (act / "login.js").exists()
+    assert (act / "profile/Default/Cookies").read_text() == "session"
+
+
+def test_activity_sync_keeps_both_sessions_when_both_exist(tmp_path):
+    repo, home = _checkout(tmp_path), tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    (repo / "activity/profile").mkdir()
+    (repo / "activity/profile/old").write_text("checkout")
+    act = home / "Library/Application Support/MonitaskCenter/activity"
+    (act / "profile").mkdir(parents=True)
+    (act / "profile/new").write_text("copy")
+    result = _sync(repo, home)
+    assert result.returncode == 0, result.stderr
+    assert (repo / "activity/profile/old").is_file() and (act / "profile/new").is_file()
+    assert not (act / "profile/old").exists() and "兩處都有登入 session" in result.stdout
+
+
+def test_activity_sync_reports_a_failed_load(tmp_path):
+    repo, home = _checkout(tmp_path), tmp_path / "home"
+    home.mkdir(exist_ok=True)
+    result = _sync(repo, home, launchctl_fails=True)
+    assert result.returncode != 0 and "載入 com.monitask-center.activity 失敗" in result.stdout
 
 
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("node"),
