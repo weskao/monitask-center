@@ -1,3 +1,9 @@
+## [1.9.4] - 2026-10-27
+
+### 🚀 Features
+
+- **activity:** Add a record-only fetch mode
+- **config:** Fetch today's activity in the background
 ## [1.9.3] - 2026-10-27
 
 ### 🚀 Features
