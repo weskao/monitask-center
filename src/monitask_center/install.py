@@ -39,6 +39,11 @@ ENV_KEYS = telegram.ENV_KEYS
 #: site-packages otherwise. launchd never imports it in place: macOS privacy protection stops a launchd job
 #: reading a checkout under Documents/Desktop/Downloads, so sync_package copies it into the runtime.
 PACKAGE = Path(__file__).resolve().parent
+#: activity/ code the activity job's copy runs, kept current on upgrade (the wheel ships it as PACKAGE/_activity).
+#: config.json may be edited by hand, so only activity/install.sh copies it.
+# shortcut: package.json is left out, since node_modules cannot follow it here; ship an `npm install` step when
+# a release changes the job's dependencies.
+ACTIVITY_FILES = ("run.sh", "fetch.js", "lib.js", "login.js")
 # Bundle id = the TCC identity the Accessibility grant belongs to; never change it.
 BUNDLE_ID = "com.dannylin.monitask-center"
 TCC_DB = "/Library/Application Support/com.apple.TCC/TCC.db"
@@ -216,10 +221,14 @@ def sync_package(p: Paths) -> bool:
 
     A few dozen stats when current. The copy is built beside the target and swapped in by rename, so a
     launchd tick never imports a half-copied package."""
-    target = p.src / PACKAGE.name
+    return _sync_package_into(p.src)
+
+
+def _sync_package_into(src: Path) -> bool:
+    target = src / PACKAGE.name
     if target == PACKAGE or _manifest(PACKAGE) == _manifest(target):
         return False
-    staging, old = p.src / f".{PACKAGE.name}.new", p.src / f".{PACKAGE.name}.old"
+    staging, old = src / f".{PACKAGE.name}.new", src / f".{PACKAGE.name}.old"
     for leftover in (staging, old):
         shutil.rmtree(leftover, ignore_errors=True)
     shutil.copytree(PACKAGE, staging, ignore=shutil.ignore_patterns("__pycache__"))
@@ -385,8 +394,39 @@ def ensure_runtime(p: Paths | None = None) -> bool:
 
 def migrate(settings: config.Settings) -> str | None:
     """Upgrade migrations (any CLI command, and "Update now", which reaches new code only through here):
-    the runtime below, then launchd.migrate_activity. -> lines to print when something was done, else None."""
-    return "\n".join(note for note in (_migrate_runtime(settings), launchd.migrate_activity()) if note) or None
+    the runtime below, then launchd.migrate_activity and the activity copy's code. -> lines to print when
+    something was done, else None."""
+    notes = (_migrate_runtime(settings), launchd.migrate_activity(), _migrate_activity_code())
+    return "\n".join(note for note in notes if note) or None
+
+
+def _stamp(path: Path) -> tuple[int, int] | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_size, st.st_mtime_ns
+
+
+def _migrate_activity_code() -> str | None:
+    """Bring the activity job's copy (made by activity/install.sh) to this release's ACTIVITY_FILES and package:
+    1.9.5 and older left it at whatever checkout last installed it, without `run.sh record`. A few stats when
+    current; never raises. -> a line to print when it did something, else None."""
+    act = launchd.activity_runner().parent
+    if launchd.runner("activity") != str(launchd.activity_runner()) or not act.is_dir():
+        return None  # not installed, or still on its checkout (launchd.migrate_activity moves it first)
+    bundled = PACKAGE / "_activity"
+    source = bundled if bundled.is_dir() else PACKAGE.parents[1] / "activity"  # editable: the checkout's
+    try:
+        changed = [name for name in ACTIVITY_FILES
+                   if (stamp := _stamp(source / name)) and stamp != _stamp(act / name)]
+        for name in changed:  # renamed into place: a tick never runs a half-written script
+            shutil.copy2(source / name, act / f".{name}.new")
+            (act / f".{name}.new").replace(act / name)
+        package = _sync_package_into(act / "src")
+    except OSError as exc:
+        return t("install.err.activity_code", error=launchd.describe_error(exc))
+    return t("install.activity.synced", path=act) if changed or package else None
 
 
 def _migrate_runtime(settings: config.Settings) -> str | None:

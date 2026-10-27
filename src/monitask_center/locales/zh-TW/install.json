@@ -104,5 +104,7 @@
   "install.tg.migrated": "已將 .env 的 token 移入認證存放區",
   "install.tg.saved_env": "⚠️ 本機沒有認證存放區({backend}),token 已改存於 .env(僅限本人讀寫)",
   "install.migrated": "已將背景排程改為從 {path} 執行(不再依賴專案目錄)",
-  "install.err.migrate": "搬移背景排程失敗,請執行 monitask-center install:{error}"
+  "install.err.migrate": "搬移背景排程失敗,請執行 monitask-center install:{error}",
+  "install.activity.synced": "已將活動率排程的程式更新為此版本({path})",
+  "install.err.activity_code": "更新活動率排程的程式失敗,請在 checkout 執行 bash activity/install.sh install:{error}"
 }

@@ -66,7 +66,7 @@ monitask-center install          # 一次完成其餘設定
 
 輔助使用檢查(「自動播放/暫停」或「下班詢問」開啟時)讀取 TCC.db，確認授權已開啟且對應**目前**的 runner(重新簽章會改變 cdhash，舊授權即失效，下班「停止計時」會失敗)。未授權或已失效時，安裝程式會自動執行 `tccutil reset Accessibility com.dannylin.monitask-center` 清掉舊授權、以 app 身分啟動 runner 讓 macOS 列出目前版本並跳出詢問，再開啟「系統設定 → 隱私權與安全性 → 輔助使用」；你只需開啟 MonitaskCenter 的開關(macOS 不允許指令代為開啟)。終端機沒有「完整磁碟存取權」而無法讀取時，只跳出詢問(已授權則不顯示)，不會重設授權。此步驟不等待、也不會讓安裝失敗。
 
-活動率通知使用獨立的 Node.js 排程，從 checkout 安裝，並沿用 `monitask-center install` 建立的 python 執行環境讀取主設定。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會把排程程式(含 `node_modules` 與讀設定用的 `src/monitask_center`)複製到 `~/Library/Application Support/MonitaskCenter/activity/`(權限 700)，launchd 從那裡執行。macOS 隱私保護會擋下背景工作讀取「文件」「桌面」「下載項目」裡的 checkout，複本不在這些位置，所以**不需要「完整磁碟存取權」**；先前為 Node 加過此權限的，可到「系統設定 → 隱私權與安全性 → 完整磁碟存取權」移除。更新程式(`git pull`、`npm install`)後重跑 `bash activity/install.sh install` 才會同步到複本。
+活動率通知使用獨立的 Node.js 排程，從 checkout 安裝，並沿用 `monitask-center install` 建立的 python 執行環境讀取主設定。在 `activity/` 執行 `bash install.sh install` 時，缺少 Node.js 會由 Homebrew 安裝；安裝程式會把排程程式(含 `node_modules` 與讀設定用的 `src/monitask_center`)複製到 `~/Library/Application Support/MonitaskCenter/activity/`(權限 700)，launchd 從那裡執行。macOS 隱私保護會擋下背景工作讀取「文件」「桌面」「下載項目」裡的 checkout，複本不在這些位置，所以**不需要「完整磁碟存取權」**；先前為 Node 加過此權限的，可到「系統設定 → 隱私權與安全性 → 完整磁碟存取權」移除。升級 `monitask-center` 後，下一個指令(`--config`、`status` 等)會自動把複本的 `run.sh`、`fetch.js`、`lib.js`、`login.js` 與 `src/monitask_center` 更新為該版本(1.9.5 以前的複本缺少 `record`，`--config` 因此不顯示今日活動)，不必重跑安裝；`config.json`、登入 session 與 `node_modules` 不動。依賴有變(`npm install`)或改了 `config.json` 時，仍需重跑 `bash activity/install.sh install`。
 
 活動率直接請求 Monitask 的 `/Report/TimeSpanPartial` HTML 資料，沿用專用登入 session，不等待網頁渲染。預設自動取得登入者自己的成員 ID，無需 OAuth client 或個人 ID 寫入程式。首次使用需先準備依賴與登入：
 
@@ -83,7 +83,7 @@ bash activity/install.sh install
 
 **低活動率提醒：** 活動率排程每 10 分鐘喚醒一次，依 `--config` 的「活動率檢查頻率」(預設每 10 分鐘，從開始時間起算，例如 10:00 開始、每 40 分鐘即 10:00、10:40、11:20…)比對**今日活動**與「活動率提醒門檻」(預設 60%)。低於門檻時發一則 Telegram 提醒，說明今日活動率、門檻與差距、最近紀錄，並提醒確認 Monitask 是否仍在記錄、離座請暫停計時。同一段 10 分鐘紀錄只提醒一次(記在 `~/.monitask-center/activity-alert.json`，送達後才記錄，失敗則下次重試)。只在工作日的開始～結束時間內(含結束整點，午休略過除外)且 Telegram 開啟時檢查；整點報表照舊。只在提醒時段內抓取失敗不會發 Telegram，只寫日誌，避免每 10 分鐘重複告警；`monitask-center activity` 只發報表，不觸發提醒。
 
-**設定畫面的今日活動**：活動率排程每次抓到報表都把今日活動率與時間記在 `~/.monitask-center/activity-today.json`，`monitask-center --config` 的「目前狀態」據此顯示「今日活動: 64.45% (18:20 更新)」，百分比依數值上色(低於 60% 紅、低於 80% 橘、其餘綠，與 `monitask-center activity` 相同)；`monitask-center status` 也會列出(不上色)。今天還沒抓到資料、或記錄已超過 5 分鐘時(例如下班後排程不再更新)，`--config` 會在背景執行一次 `activity/run.sh record`(只記錄、不發 Telegram、不受工作時段限制，下班後與非工作日也照常抓取)，抓取期間此行以 spinner 顯示「讀取中…」，抓到後自動換成活動率；抓取失敗或沒裝活動率排程時不顯示此行。從舊版升級時需重跑 `bash activity/install.sh install` 把新版排程同步到複本(`record` 也在其中)，之後才會開始記錄。
+**設定畫面的今日活動**：活動率排程每次抓到報表都把今日活動率與時間記在 `~/.monitask-center/activity-today.json`，`monitask-center --config` 的「目前狀態」據此顯示「今日活動: 64.45% (18:20 更新)」，百分比依數值上色(低於 60% 紅、低於 80% 橘、其餘綠，與 `monitask-center activity` 相同)；`monitask-center status` 也會列出(不上色)。今天還沒抓到資料、或記錄已超過 5 分鐘時(例如下班後排程不再更新)，`--config` 會在背景執行一次 `activity/run.sh record`(只記錄、不發 Telegram、不受工作時段限制，下班後與非工作日也照常抓取)，抓取期間此行以 spinner 顯示「讀取中…」，抓到後自動換成活動率；抓取失敗或沒裝活動率排程時不顯示此行。
 
 **活動率日誌**：`~/Library/Application Support/MonitaskCenter/activity.out` 記錄每次執行的判斷(是否整點報表、是否檢查低活動率與門檻、未低於門檻、已提醒略過、讀取主設定失敗的原因)、傳送回條，以及 `install.sh` 的同步、搬移與載入紀錄；`activity.err` 是排程本身無法啟動時的錯誤(例如 `Operation not permitted`)。自動搬移的結果另記在 `monitask.log`。
 

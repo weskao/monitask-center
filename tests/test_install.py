@@ -432,6 +432,34 @@ def test_sync_package_copies_the_package_once_and_follows_edits(tmp_path, monkey
     assert sorted(x.name for x in p.src.iterdir()) == ["monitask_center"]  # no staging leftovers
 
 
+@pytest.mark.parametrize("where", ["_activity", "../../activity"])  # the wheel's copy, an editable checkout's
+def test_migrate_brings_a_stale_activity_copy_to_this_release_once(tmp_path, monkeypatch, where):
+    """1.9.5 and older never refreshed the activity job's copy on upgrade: it lacked `run.sh record`."""
+    source = _package(tmp_path, monkeypatch) / where
+    source.mkdir(parents=True)
+    for name in install.ACTIVITY_FILES:
+        (source / name).write_text(f"new {name}\n")
+    (source / "config.json").write_text("{}\n")
+    act = launchd.activity_runner().parent
+    (act / "profile").mkdir(parents=True)  # the login session
+    (act / "run.sh").write_text("usage: run.sh {login | fetch [force] | now}\n")
+    (act / "config.json").write_text('{"memberId": "user_test_001"}\n')  # may be edited by hand: kept
+    launchd.agents_dir().mkdir(parents=True)
+    launchd.plist_path("activity").write_bytes(plistlib.dumps({
+        "ProgramArguments": ["/bin/bash", str(launchd.activity_runner()), "fetch"],
+        "StartCalendarInterval": launchd.ACTIVITY_TICKS}))
+    assert install.migrate(Settings()) == t("install.activity.synced", path=act)
+    assert all((act / name).read_text() == f"new {name}\n" for name in install.ACTIVITY_FILES)
+    assert (act / "src/monitask_center/engine.py").read_text() == "v1\n"  # the package it reads settings with
+    assert (act / "profile").is_dir() and "user_test_001" in (act / "config.json").read_text()
+    assert install.migrate(Settings()) is None
+
+
+def test_migrate_leaves_activity_alone_without_the_job(tmp_path, monkeypatch):
+    (_package(tmp_path, monkeypatch) / "_activity").mkdir()
+    assert install.migrate(Settings()) is None and not launchd.activity_runner().parent.exists()
+
+
 def test_migrate_moves_a_runner_off_the_package_in_place_once(system, tmp_path, monkeypatch):
     """1.9.1 and older: run.sh imported the checkout's (or the venv's) package in place."""
     _package(tmp_path, monkeypatch)

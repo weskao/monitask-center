@@ -17,6 +17,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/monitask_center"]
 
+# install._migrate_activity_code keeps the activity job's copy on this release's code (install.ACTIVITY_FILES).
+[tool.hatch.build.targets.wheel.force-include]
+"activity/run.sh" = "monitask_center/_activity/run.sh"
+"activity/fetch.js" = "monitask_center/_activity/fetch.js"
+"activity/lib.js" = "monitask_center/_activity/lib.js"
+"activity/login.js" = "monitask_center/_activity/login.js"
+
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.17.1"]
 
