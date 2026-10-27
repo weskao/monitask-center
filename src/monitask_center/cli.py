@@ -132,7 +132,13 @@ def cmd_config() -> int:
 
     # `run.sh status` costs a python start: cache it for the session (settings are re-read each call).
     status.runner_status = functools.cache(status.runner_status)
-    return menu.config_menu(status_lines=lambda: status.status_lines(config.load()))
+    fetch = status.start_activity_fetch()
+
+    def fetching() -> bool:
+        return fetch is not None and fetch.poll() is None
+
+    return menu.config_menu(status_lines=lambda: status.status_lines(config.load(), fetching=fetching()),
+                            busy=fetching)
 
 
 def _update_cache_path() -> Path:

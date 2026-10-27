@@ -75,6 +75,7 @@ VACATION = next(row for row in ROWS if row.kind == "vacation")
 class State:
     settings: config.Settings
     status_source: Callable[[], list[str]] | None = None
+    busy: Callable[[], bool] | None = None  # True while a background fetch feeds status_source
     note: tuple[str, str] = ("", "")
     failed: bool = False
     draft: str = ""  # vacation text kept after a rejected entry
@@ -456,13 +457,14 @@ def _on_winch(_signum, _frame) -> None:
         raise _Resized
 
 
-def _wait(stdin: IO[str]) -> bool:
-    """Block until a key is ready (False) or the terminal was resized (True): redraw then."""
+def _wait(stdin: IO[str], timeout: float | None = None) -> bool:
+    """Block until a key is ready (False), or the terminal was resized or *timeout* passed (True): redraw then."""
     try:
         _winch["idle"] = True  # armed first, then checked: a signal in between is not lost
         if _winch["pending"]:
             raise _Resized
-        select.select([stdin], [], [])
+        if not select.select([stdin], [], [], timeout)[0]:
+            return True
     except _Resized:
         _winch["pending"] = False
         return True
@@ -548,10 +550,14 @@ def _tui(state: State, stdin: IO[str], out: IO[str]) -> int:
         return _main_lines(state, selected, out)
 
     try:
+        spinning = bool(state.busy and state.busy())
         with _owns_screen(out), keyreader.key_session(stdin):
             screen.draw(render())
             while True:
-                if _wait(stdin):
+                if _wait(stdin, present.SPIN_INTERVAL if spinning else None):
+                    if spinning and not state.busy():
+                        spinning = False
+                        state._status = None  # the fetch ended: re-probe to show its result
                     screen.draw(render())
                     continue
                 key = keyreader.read_key(stdin)
@@ -750,13 +756,15 @@ def update_prompt(found: update_check.UpdateAvailable, notes_url: str, *,
 
 
 def config_menu(stdin: IO[str] | None = None, stdout: IO[str] | None = None,
-                status_lines: Callable[[], list[str]] | None = None) -> int:
-    """Run the settings menu; 0 on a clean exit, 1 when a save or sync failed."""
+                status_lines: Callable[[], list[str]] | None = None,
+                busy: Callable[[], bool] | None = None) -> int:
+    """Run the settings menu; 0 on a clean exit, 1 when a save or sync failed. While *busy*() is
+    true the panel redraws on its own (the status spinner) and re-probes the status once it ends."""
     stdin = stdin or sys.stdin
     out = stdout or sys.stdout
     if hasattr(out, "reconfigure"):  # a non-UTF-8 locale shows "?" for glyphs instead of crashing
         out.reconfigure(errors="replace")
-    state = State(config.load(), status_lines)
+    state = State(config.load(), status_lines, busy=busy)
     i18n.set_language(state.settings.language)
     if backup := config.corrupt_backup():  # shown on the first draw; the next key clears it
         home = str(Path.home())

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -24,12 +25,16 @@ EMOJI_TERM_PROGRAMS = frozenset({"Apple_Terminal", "iTerm.app", "vscode", "WezTe
 EMOJI_TERMS = ("xterm-kitty", "alacritty", "foot")
 NO_EMOJI_TERMS = frozenset({"linux", "dumb", "vt100"})
 MARK = "◆"
+# Frames, interval and colour of ~/scripts/lib/spinner.sh, so every local tool animates alike.
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPIN_INTERVAL = 0.08
 
 AMBER = "38;5;214"
 TEAL = "38;5;37"
 GREY = "38;5;245"
 RED = "38;5;203"
 GREEN = "38;5;114"
+CYAN = "38;5;87"
 BOLD = "1"
 DIM = "2"
 ITALIC = "3"
@@ -183,8 +188,12 @@ def compose(
         line = note(text, *INFO)
         if not (style.color and mark):
             return line
+        if tone == "spin":  # mark is a spinner frame: draw the current one
+            painted = style.paint(SPINNER[int(time.monotonic() / SPIN_INTERVAL) % len(SPINNER)], CYAN)
+        else:
+            painted = style.paint(mark, BOLD, *TONES.get(tone, ()))
         # The mark's reset ends the grey italic too: resume it for the rest of the line.
-        return line.replace(mark, style.paint(mark, BOLD, *TONES.get(tone, ())) + f"\x1b[{';'.join(INFO)}m", 1)
+        return line.replace(mark, painted + f"\x1b[{';'.join(INFO)}m", 1)
 
     # (group, lines) in keep-priority order; a block that does not fit is skipped whole.
     atoms = [("help", [note(help_text, DIM)])] if help_text else []

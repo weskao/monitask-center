@@ -198,3 +198,35 @@ def test_no_activity_row_without_a_rate_for_today(content):
         path.write_text(content, encoding="utf-8")
     assert "activity" not in rows()
     assert all(isinstance(x, str) for x in status.status_lines(Settings(), NOW))
+
+
+def test_a_running_fetch_shows_a_spinner_until_todays_rate_exists():
+    r = status.snapshot(Settings(), NOW, fetching=True)
+    spin = next(x for x in r if x.key == "activity")
+    assert (spin.level, spin.mark) == ("spin", status.ACTIVITY_SPIN)
+    assert spin.value.startswith(status.ACTIVITY_SPIN) and t("status.activity.loading") in spin.value
+    write_activity("2026-10-02", "70")
+    assert rows()["activity"].level == "warn"
+    assert status.snapshot(Settings(), NOW, fetching=True)[1].level == "warn"  # a recorded rate wins
+
+
+def _install_activity_job():
+    script = launchd.activity_runner()
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text("#!/bin/bash\n")
+    launchd.agents_dir().mkdir(parents=True, exist_ok=True)
+    launchd.plist_path("activity").write_bytes(
+        __import__("plistlib").dumps({"ProgramArguments": ["/bin/bash", str(script), "fetch"]}))
+    return script
+
+
+def test_start_activity_fetch_runs_record_in_its_own_session_only_when_needed(monkeypatch):
+    started = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: started.append((cmd, kw)) or "proc")
+    assert status.start_activity_fetch(NOW) is None and not started  # job not installed
+    script = _install_activity_job()
+    assert status.start_activity_fetch(NOW) == "proc"
+    cmd, kw = started[0]
+    assert cmd == ["/bin/bash", str(script), "record"] and kw["start_new_session"]
+    write_activity("2026-10-02", "70")
+    assert status.start_activity_fetch(NOW) is None and len(started) == 1  # today's rate already there

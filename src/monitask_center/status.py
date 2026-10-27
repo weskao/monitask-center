@@ -14,6 +14,7 @@ OK_STATES = ("running", "timing", "hidden")  # hidden = Monitask hides its windo
 MAX_VACATION_SHOWN = 5
 NEXT_LOOKAHEAD_DAYS = 14
 ACTIVITY_FILE = "activity-today.json"  # under config.home_dir(); activity/fetch.js writes it on every fetch
+ACTIVITY_SPIN = "⠋"  # first frame of tui.present.SPINNER: the TUI animates it while the fetch runs
 
 
 @dataclass(frozen=True)
@@ -145,7 +146,22 @@ def _activity_row(today: date) -> Row | None:
                t("status.activity.value", rate=mark, time=data.get("time", "")), level, mark)
 
 
-def snapshot(settings: config.Settings, now: datetime | None = None) -> list[Row]:
+def start_activity_fetch(now: datetime | None = None) -> subprocess.Popen | None:
+    """Fetch today's activity rate in the background when none is recorded yet, at any hour (`run.sh record`
+    skips the job's work-window gate and sends nothing). None when the job is not installed or there is a rate."""
+    script = launchd.activity_runner()
+    if (_activity_row((now or datetime.now()).date()) or launchd.runner("activity") != str(script)
+            or not script.is_file()):
+        return None
+    try:
+        # Own session: Ctrl+C in the menu must not stop it, so the next --config still shows the rate.
+        return subprocess.Popen(["/bin/bash", str(script), "record"], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    except OSError:
+        return None
+
+
+def snapshot(settings: config.Settings, now: datetime | None = None, fetching: bool = False) -> list[Row]:
     """Status rows, most important first (a small terminal truncates the tail).
 
     Spawns `run.sh status` (~1 python start): cache the result in a TUI. Read-only: the
@@ -165,6 +181,9 @@ def snapshot(settings: config.Settings, now: datetime | None = None) -> list[Row
                         "ok" if state in OK_STATES else "warn"))
     if activity := _activity_row(today):
         rows.append(activity)
+    elif fetching:
+        rows.append(Row("activity", t("status.label.activity"),
+                        f"{ACTIVITY_SPIN} {t('status.activity.loading')}", "spin", ACTIVITY_SPIN))
 
     last = check.last_check()
     rows.append(Row("last_check", t("status.label.last_check"),
@@ -205,10 +224,11 @@ def snapshot(settings: config.Settings, now: datetime | None = None) -> list[Row
     return rows
 
 
-def status_lines(settings: config.Settings, now: datetime | None = None) -> list[str | tuple[str, str, str]]:
+def status_lines(settings: config.Settings, now: datetime | None = None,
+                 fetching: bool = False) -> list[str | tuple[str, str, str]]:
     """Plain lines; a row with a mark is (line, mark, level) so the TUI can colour the mark."""
     lines: list[str | tuple[str, str, str]] = []
-    for r in snapshot(settings, now):
+    for r in snapshot(settings, now, fetching):
         line = f"{r.label}: {r.value}"
         lines.append((line, r.mark, r.level) if r.mark else line)
     return lines

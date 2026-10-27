@@ -38,15 +38,16 @@ def test_install_and_uninstall_route_exit_codes(monkeypatch):
 def test_config_flag_and_bare_word(monkeypatch, argv):
     seen = {}
 
-    def fake_menu(stdin=None, stdout=None, status_lines=None):
-        seen["lines"] = status_lines
+    def fake_menu(stdin=None, stdout=None, status_lines=None, busy=None):
+        seen["lines"], seen["busy"] = status_lines, busy
         return 5
 
     monkeypatch.setattr(menu, "config_menu", fake_menu)
     monkeypatch.setattr(status, "runner_status", status.runner_status)  # restored after the cache wrap
-    monkeypatch.setattr(status, "status_lines", lambda s: ["line"])
+    monkeypatch.setattr(status, "start_activity_fetch", lambda: None)
+    monkeypatch.setattr(status, "status_lines", lambda s, fetching=False: ["line", fetching])
     assert cli.main(argv) == 5
-    assert seen["lines"]() == ["line"]
+    assert seen["lines"]() == ["line", False] and seen["busy"]() is False
 
 
 def test_status_prints_snapshot_rows(monkeypatch, capsys):

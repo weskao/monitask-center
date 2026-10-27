@@ -272,3 +272,14 @@ def test_a_marked_status_line_paints_the_mark_in_its_tone_and_resumes_grey():
     plain = present.compose("t", [("row", "value", "value")], 0, columns=80, lines=None,
                             style=present.Style(False), hint="h", extra=extra, extra_title="st")
     assert "  rate: 64.45% (09:20)" in plain and not any("\x1b" in x for x in plain)
+
+
+def test_a_spin_status_line_draws_a_spinner_frame_in_cyan():
+    extra = ["s0", ("today: ⠋ loading", "⠋", "spin")]
+    out = present.compose("t", [("row", "value", "value")], 0, columns=80, lines=None,
+                          style=present.Style(True), hint="h", extra=extra, extra_title="st")
+    line = next(x for x in out if "loading" in x)
+    assert any(f"\x1b[{present.CYAN}m{f}\x1b[0m" in line for f in present.SPINNER)
+    plain = present.compose("t", [("row", "value", "value")], 0, columns=80, lines=None,
+                            style=present.Style(False), hint="h", extra=extra, extra_title="st")
+    assert "  today: ⠋ loading" in plain

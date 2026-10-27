@@ -611,6 +611,18 @@ def test_sigwinch_wakes_a_blocked_key_wait_without_eating_a_key():
         os.close(w)
 
 
+def test_a_key_wait_with_a_timeout_wakes_for_the_spinner_without_eating_a_key():
+    r, w = os.pipe()
+    try:
+        with os.fdopen(r) as stdin:
+            assert menu._wait(stdin, 0.01) is True  # nothing typed: time to redraw
+            os.write(w, b"x")
+            assert menu._wait(stdin, 0.01) is False
+            assert os.read(r, 1) == b"x"
+    finally:
+        os.close(w)
+
+
 def test_tui_installs_the_sigwinch_redraw_and_restores_the_previous_handler(monkeypatch):
     """A resize with no keypress must redraw: the real _tui path installs the handler."""
     import contextlib
