@@ -359,21 +359,24 @@ PY
     assert (tmp_path / "sync.log").read_text() == "sync /opt/node\n"
 
 
-@pytest.mark.parametrize("body,code,detail", [
+@pytest.mark.parametrize("body,key,error", [
     # the hourly check under launchd: macOS privacy protection refuses the checkout
-    ("#!/bin/bash\necho 'install.sh: Operation not permitted' >&2; exit 126\n",
-     126, "install.sh: Operation not permitted"),
-    # a checkout older than the sync command
+    ("#!/bin/bash\necho 'install.sh: Operation not permitted' >&2; exit 126\n", "launchd.err.activity_move",
+     t("launchd.err.installer", code=126, detail="install.sh: Operation not permitted")),
+    # a checkout older than the sync command: only a git pull helps
     ("#!/bin/bash\necho 'usage: install.sh {install|uninstall|reload|status}' >&2; exit 2\n",
-     2, "usage: install.sh {install|uninstall|reload|status}"),
-    ("#!/bin/bash\nexit 0\n", 1, ""),  # claims success but the job still runs the checkout
+     "launchd.err.activity_outdated",
+     t("launchd.err.installer", code=2, detail="usage: install.sh {install|uninstall|reload|status}")),
+    ("#!/bin/bash\nexit 3\n", "launchd.err.activity_move", t("launchd.err.installer_code", code=3)),
+    # claims success but the job still runs the checkout
+    ("#!/bin/bash\nexit 0\n", "launchd.err.activity_move", t("launchd.err.installer_unmoved")),
 ])
-def test_migrate_activity_move_failure_is_a_message(tmp_path, calls, body, code, detail):
+def test_migrate_activity_move_failure_is_a_message(tmp_path, calls, body, key, error):
     installer = _checkout_installer(tmp_path, body)
     path = _activity_plist([{"Minute": 0}], installer.parent / "run.sh")
     before = path.read_bytes()
-    error = launchd.describe_error(launchd.LaunchdError(code, [], detail))
-    assert launchd.migrate_activity() == t("launchd.err.activity_move", error=error)
+    assert "launchctl" not in error
+    assert launchd.migrate_activity() == t(key, error=error)
     assert path.read_bytes() == before and calls == []
 
 

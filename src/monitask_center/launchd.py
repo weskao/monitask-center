@@ -263,8 +263,16 @@ def _move_activity(spec: dict, installer: Path) -> str:
         return t("launchd.err.activity_move", error=describe_error(exc))
     if r.returncode == 0 and runner("activity") == str(activity_runner()):
         return t("launchd.activity.moved", path=activity_runner().parent)
-    return t("launchd.err.activity_move",
-             error=describe_error(LaunchdError(r.returncode or 1, cmd, _first_line(r.stderr or r.stdout))))
+    detail = _first_line(r.stderr or r.stdout)
+    if r.returncode == 0:
+        error = t("launchd.err.installer_unmoved")
+    elif detail:
+        error = t("launchd.err.installer", code=r.returncode, detail=detail)
+    else:
+        error = t("launchd.err.installer_code", code=r.returncode)
+    # A checkout older than `sync` prints its usage: retrying the CLI cannot help until it is pulled.
+    outdated = r.returncode == 2 and detail.startswith("usage:")
+    return t("launchd.err.activity_outdated" if outdated else "launchd.err.activity_move", error=error)
 
 
 def sync_message(state: str, jobs: list[str]) -> str:

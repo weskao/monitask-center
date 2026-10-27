@@ -22,6 +22,10 @@
   "launchd.err.activity": "更新活動率排程失敗,請在 checkout 執行 bash activity/install.sh install:{error}",
   "launchd.activity.moved": "已將活動率排程改為從 {path} 執行(背景工作不再讀取專案目錄,也不需要完整磁碟存取權;細節見 activity.out)",
   "launchd.err.activity_move": "活動率排程仍從專案目錄執行,macOS 隱私保護可能擋下背景工作;自動搬移失敗:{error}。請在終端機執行任一 monitask-center 指令重試,或在 checkout 執行 git pull 後執行 bash activity/install.sh install",
+  "launchd.err.activity_outdated": "活動率排程仍從專案目錄執行,macOS 隱私保護可能擋下背景工作;checkout 的 activity/install.sh 版本太舊,無法自動搬移({error})。請在 checkout 執行 git pull 後執行 bash activity/install.sh install",
+  "launchd.err.installer": "install.sh 結束碼 {code}:{detail}",
+  "launchd.err.installer_code": "install.sh 結束碼 {code}",
+  "launchd.err.installer_unmoved": "install.sh 已執行,但排程仍指向專案目錄",
   "launchd.err.migrate": "補裝新版排程失敗,請執行 monitask-center install:{error}",
   "config.corrupt_saved": "已將損毀的設定檔備份至 {path}",
   "launchd.sync.reinstalled": "已重新載入排程:{jobs}"
