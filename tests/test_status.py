@@ -1,5 +1,7 @@
 import json
+import os
 import subprocess
+import time
 from datetime import datetime
 
 import pytest
@@ -229,4 +231,8 @@ def test_start_activity_fetch_runs_record_in_its_own_session_only_when_needed(mo
     cmd, kw = started[0]
     assert cmd == ["/bin/bash", str(script), "record"] and kw["start_new_session"]
     write_activity("2026-10-02", "70")
-    assert status.start_activity_fetch(NOW) is None and len(started) == 1  # today's rate already there
+    assert status.start_activity_fetch(NOW) is None and len(started) == 1  # today's fresh rate already there
+    stale = time.time() - status.ACTIVITY_FRESH_SECONDS - 1
+    os.utime(config.home_dir() / status.ACTIVITY_FILE, (stale, stale))
+    assert status.start_activity_fetch(NOW) == "proc" and len(started) == 2  # a stale rate is refetched
+    assert rows()["activity"].mark == "70%"  # and stays shown meanwhile

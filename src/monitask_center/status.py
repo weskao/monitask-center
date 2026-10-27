@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -14,6 +15,7 @@ OK_STATES = ("running", "timing", "hidden")  # hidden = Monitask hides its windo
 MAX_VACATION_SHOWN = 5
 NEXT_LOOKAHEAD_DAYS = 14
 ACTIVITY_FILE = "activity-today.json"  # under config.home_dir(); activity/fetch.js writes it on every fetch
+ACTIVITY_FRESH_SECONDS = 300  # an older record is refetched when --config opens (the job ticks every 10 min)
 ACTIVITY_SPIN = "⠋"  # first frame of tui.present.SPINNER: the TUI animates it while the fetch runs
 
 
@@ -146,11 +148,21 @@ def _activity_row(today: date) -> Row | None:
                t("status.activity.value", rate=mark, time=data.get("time", "")), level, mark)
 
 
+def _activity_fresh(today: date) -> bool:
+    """Today's rate is recorded and was written within ACTIVITY_FRESH_SECONDS (file mtime: no timezone to guess)."""
+    try:
+        age = time.time() - (config.home_dir() / ACTIVITY_FILE).stat().st_mtime
+    except OSError:
+        return False
+    return _activity_row(today) is not None and age < ACTIVITY_FRESH_SECONDS
+
+
 def start_activity_fetch(now: datetime | None = None) -> subprocess.Popen | None:
-    """Fetch today's activity rate in the background when none is recorded yet, at any hour (`run.sh record`
-    skips the job's work-window gate and sends nothing). None when the job is not installed or there is a rate."""
+    """Fetch today's activity rate in the background when none is recorded or the record is stale, at any hour
+    (`run.sh record` skips the job's work-window gate and sends nothing); a stale rate stays shown meanwhile.
+    None when the job is not installed or the record is fresh."""
     script = launchd.activity_runner()
-    if (_activity_row((now or datetime.now()).date()) or launchd.runner("activity") != str(script)
+    if (_activity_fresh((now or datetime.now()).date()) or launchd.runner("activity") != str(script)
             or not script.is_file()):
         return None
     try:
