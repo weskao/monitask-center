@@ -34,7 +34,7 @@ wheels = [
 
 [[package]]
 name = "monitask-center"
-version = "1.9.4"
+version = "1.9.5"
 source = { editable = "." }
 dependencies = [
     { name = "telegram-kit" },

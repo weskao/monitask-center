@@ -1,3 +1,8 @@
+## [1.9.5] - 2026-10-27
+
+### 🚀 Features
+
+- **status:** Refetch activity rate when stale
 ## [1.9.4] - 2026-10-27
 
 ### 🚀 Features
