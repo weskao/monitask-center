@@ -224,7 +224,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | `~/.monitask-center/config.json` | 使用者設定(單一檔案，不放在專案目錄) |
 | `~/.monitask-center/last-check.json` | 上次檢查結果 |
 | `~/.monitask-center/holidays/` | 政府行事曆快取(每年一檔) |
-| `~/Library/Application Support/MonitaskCenter/run.sh` | launchd 進入點(由 `install` 產生)：`PYTHONPATH` 設為 `pylibs` 與已安裝的套件，載入 `~/.monitask-center/.env`，再用 bundle 內 python 執行 `python -m monitask_center.engine` |
+| `~/Library/Application Support/MonitaskCenter/run.sh` | launchd 進入點(由 `install` 產生)：`PYTHONPATH` 設為 `pylibs` 與套件複本 `src/`，載入 `~/.monitask-center/.env`，再用 bundle 內 python 執行 `python -m monitask_center.engine` |
 | `~/Library/Application Support/MonitaskCenter/MonitaskCenter.app` | 內含 python 副本；**AX 授權對象**(TCC 身分 `com.dannylin.monitask-center`)，勿刪 |
 | `~/Library/Application Support/MonitaskCenter/pylibs/` | 安裝程式透過 pip 裝入的 PyObjC wheel 與 telegram-kit |
 | `~/Library/Application Support/MonitaskCenter/monitask.log` | 日誌 |
@@ -257,8 +257,9 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 
 - **需要自動播放/暫停時保留 AX 授權** `MonitaskCenter.app`；移除授權不影響狀態讀取與提醒。launchd 一律經 `run.sh` 以 `/bin/bash` 呼叫 bundle 內 python(直接 exec bundle 執行檔會被當 app 啟動而失效)。
 - **brew 升級 `python@3.13`** 可能讓 bundle 內 python 副本連結的 framework 路徑失效：重跑 `monitask-center install` 會重建 runner 並重新簽章；重簽後舊的 Accessibility 授權失效，同一次 `install` 的輔助使用檢查會重設並開啟設定面板，開啟 MonitaskCenter 即可。
-- **執行環境不在 checkout 裡**：launchd 執行 `~/Library/Application Support/MonitaskCenter/run.sh`，它指向目前安裝的 `monitask_center` 套件(git 標籤安裝時在 uv tool venv，editable 安裝時在 checkout 的 `src/`)。換了安裝方式或 venv 的 Python 版本，任何 CLI 指令(`install`/`uninstall` 除外)都會重寫 `run.sh`。
+- **執行環境不在 checkout 裡**：launchd 執行 `~/Library/Application Support/MonitaskCenter/run.sh`，它只 import 同目錄 `src/monitask_center` 的套件複本，不直接讀 uv tool venv 或 checkout 的 `src/`：macOS 隱私保護會擋下背景工作讀取「文件」「桌面」「下載項目」裡的 checkout(editable 安裝時會出現 `No module named 'monitask_center'`，check 與 overtime 都不會執行)。任何 CLI 指令(`install`/`uninstall` 除外)與「立即更新」會比對檔案大小與修改時間(約 1 ms)，有差異才重新複製(先複製到旁邊再換名，排程不會讀到一半的套件)，並視需要重寫 `run.sh`。
+- **從 1.9.1 以前升級**：舊版 `run.sh` 直接 import 目前安裝的套件(editable 安裝時就是 checkout 的 `src/`)。新版在「立即更新」或任何 CLI 指令時複製套件並改寫 `run.sh`，第二次執行不做任何事；整點 `check` 若本身已因此無法啟動，執行任一 `monitask-center` 指令即可修復。
 - **從 1.5.0 以前升級**：舊版的 job 從 checkout 執行。新版在「立即更新」的同步步驟，或任何 CLI 指令(`install`/`uninstall` 除外)時，會把 `MonitaskCenter.app`(保留 Accessibility 授權)、`pylibs`、`.env` 從 checkout 複製到上述目錄，產生 `run.sh`，再把 job 改指向它。若 `git pull` 已刪掉 checkout 內的 bundle，會用 Homebrew 的 python 重建並重新簽章，這時可能需要重新授予 Accessibility。整點 `check` 無法自行搬移(它本身就從舊位置執行)，所以 `git pull` 之後請執行任一 `monitask-center` 指令。
 - **低活動率提醒的排程升級**：舊版 `activity/install.sh` 裝的活動率 job 每小時喚醒一次。新版的整點 `check` 或任何 CLI 指令(`install`/`uninstall` 除外)會自動把它改成每 10 分鐘(只改排程，保留 Node 路徑與 checkout 位置)；沒裝活動率排程時不做任何事。失敗時會提示在 checkout 重跑 `bash activity/install.sh install`。
 - **活動率排程搬出 checkout(1.9.1 以前升級)**：舊版的活動率 job 直接執行 checkout 裡的 `activity/run.sh`，checkout 在「文件」等受保護位置時，launchd 會得到 `Operation not permitted`，整點報表與低活動率提醒都不會發出。新版在「立即更新」的同步步驟或任何 CLI 指令(`install`/`uninstall` 除外)時，以 job 原本的 Node 執行該 checkout 的 `bash activity/install.sh sync`：複製程式到 `~/Library/Application Support/MonitaskCenter/activity/`、搬移登入 session、合併 `.env`、把 job 改指向複本(第二次執行不做任何事)。整點 `check` 在 launchd 下通常讀不到 checkout，只會在 `monitask.log` 記一行失敗原因，下次在終端機執行任一指令時完成搬移。checkout 還沒 `git pull` 到有 `sync` 的版本時，提示先更新 checkout 再執行 `bash activity/install.sh install`。
-- 開發時用 `make install`(editable)：修改程式碼不需重新安裝；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。
+- 開發時用 `make install`(editable)：修改程式碼不需重新安裝，但背景排程跑的是複本，改完執行任一 `monitask-center` 指令(例如 `status`)才會同步；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。

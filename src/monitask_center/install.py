@@ -3,7 +3,7 @@
 Port of the old setup.sh. Idempotent: a repeat run only repairs what is broken, so the
 MonitaskCenter.app identity survives. Never controls Monitask.
 
-The launchd runtime (run.sh, MonitaskCenter.app, pylibs) is built in config.data_dir(), never in a
+The launchd runtime (run.sh, MonitaskCenter.app, pylibs, src) is built in config.data_dir(), never in a
 checkout: the CLI may be a `uv tool install --from git+...@vX.Y.Z` copy with no clone at all.
 """
 
@@ -35,9 +35,10 @@ IMPORT_PROBE = "import AppKit, ApplicationServices, Foundation, Quartz, telegram
 TOKEN_RE = telegram.TOKEN_RE
 CHAT_RE = telegram.CHAT_RE
 ENV_KEYS = telegram.ENV_KEYS
-#: The directory holding the monitask_center package: the checkout's src/ for an editable install,
-#: the tool venv's site-packages otherwise. run.sh puts it on PYTHONPATH.
-PACKAGE_PARENT = Path(__file__).resolve().parent.parent
+#: The running monitask_center package: the checkout's src/ for an editable install, the tool venv's
+#: site-packages otherwise. launchd never imports it in place: macOS privacy protection stops a launchd job
+#: reading a checkout under Documents/Desktop/Downloads, so sync_package copies it into the runtime.
+PACKAGE = Path(__file__).resolve().parent
 # Bundle id = the TCC identity the Accessibility grant belongs to; never change it.
 BUNDLE_ID = "com.dannylin.monitask-center"
 TCC_DB = "/Library/Application Support/com.apple.TCC/TCC.db"
@@ -96,6 +97,7 @@ class Paths:
         self.info_plist = self.app / "Contents/Info.plist"
         self.python_runner = self.app / "Contents/MacOS/python-runner"
         self.pylibs = self.root / "pylibs"
+        self.src = self.root / "src"  # holds the copy of PACKAGE run.sh puts on PYTHONPATH
         self.pyfix = Path(__file__).resolve().parent / "_pyfix"
         self.env = config.home_dir() / ".env"
 
@@ -156,6 +158,7 @@ def prepare_runtime(p: Paths) -> None:
                     "--only-binary=:all:", *PIP_PACKAGES], env={**os.environ, "PYTHONPATH": str(p.pyfix)})
     if not _probe_imports(p):
         raise InstallError(t("install.err.imports"))
+    sync_package(p)
     write_runner(p)
     print(t("install.runtime.ok"))
 
@@ -194,10 +197,37 @@ def render_runner(p: Paths) -> str:
     q = shlex.quote
     return ("#!/bin/bash\n"
             "# Written by monitask-center (install / upgrade); edits are overwritten.\n"
-            f"export PYTHONPATH={q(f'{p.pylibs}:{PACKAGE_PARENT}')}\n"
+            f"export PYTHONPATH={q(f'{p.pylibs}:{p.src}')}\n"
             "# Telegram fallback (TG_BOT_TOKEN / TG_CHAT_ID) when there is no credential store\n"
             f"[ -f {q(str(p.env))} ] && set -a && . {q(str(p.env))} && set +a\n"
             f'exec {q(str(p.python_runner))} -m monitask_center.engine "$@"\n')
+
+
+def _manifest(root: Path) -> dict[str, tuple[int, int]]:
+    try:
+        return {str(f.relative_to(root)): (st.st_size, st.st_mtime_ns) for f in root.rglob("*")
+                if "__pycache__" not in f.parts and f.is_file() and (st := f.stat())}
+    except OSError:
+        return {}
+
+
+def sync_package(p: Paths) -> bool:
+    """Copy PACKAGE into p.src when any file differs in size or mtime -> whether it changed.
+
+    A few dozen stats when current. The copy is built beside the target and swapped in by rename, so a
+    launchd tick never imports a half-copied package."""
+    target = p.src / PACKAGE.name
+    if target == PACKAGE or _manifest(PACKAGE) == _manifest(target):
+        return False
+    staging, old = p.src / f".{PACKAGE.name}.new", p.src / f".{PACKAGE.name}.old"
+    for leftover in (staging, old):
+        shutil.rmtree(leftover, ignore_errors=True)
+    shutil.copytree(PACKAGE, staging, ignore=shutil.ignore_patterns("__pycache__"))
+    if target.exists():
+        target.rename(old)
+    staging.rename(target)
+    shutil.rmtree(old, ignore_errors=True)
+    return True
 
 
 def write_runner(p: Paths) -> bool:
@@ -332,14 +362,14 @@ def _legacy_root(p: Paths) -> Path | None:
 
 
 def ensure_runtime(p: Paths | None = None) -> bool:
-    """Build the launchd runtime in data_dir() when it is missing, else only refresh run.sh.
+    """Build the launchd runtime in data_dir() when it is missing, else only refresh the package copy and run.sh.
 
     From a 1.5.0-and-older checkout layout, carry over what is still there (the signed bundle, so
     the Accessibility grant is kept; pylibs, so nothing is downloaded; .env), then let
     prepare_runtime rebuild the rest. -> whether anything changed. Raises InstallError/OSError."""
     p = p or Paths()
     if p.python_runner.is_file() and p.pylibs.is_dir():
-        return write_runner(p)
+        return sync_package(p) | write_runner(p)  # both, not short-circuited
     if legacy := _legacy_root(p):
         for name, target in (("MonitaskCenter.app", p.app), ("pylibs", p.pylibs)):
             if (legacy / name).is_dir() and not target.exists():

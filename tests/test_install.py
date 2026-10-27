@@ -340,7 +340,10 @@ def test_install_builds_the_bundle_and_runner_outside_any_checkout(system):
     assert info["CFBundleIdentifier"] == "com.dannylin.monitask-center"  # the TCC identity
     runner = p.runner_sh.read_text()
     assert os.access(p.runner_sh, os.X_OK)
-    assert f"{p.pylibs}:{install.PACKAGE_PARENT}" in runner  # pylibs first: its deps match the runner
+    assert f"{p.pylibs}:{p.src}" in runner  # pylibs first: its deps match the runner
+    # launchd imports its own copy, never the checkout/venv in place (a checkout under Documents is unreadable)
+    assert (p.src / "monitask_center/engine.py").read_bytes() == (install.PACKAGE / "engine.py").read_bytes()
+    assert str(install.PACKAGE) not in runner
     assert f"{p.python_runner} -m monitask_center.engine" in runner and str(p.env) in runner
     assert plistlib.loads(launchd.plist_path("check").read_bytes())["ProgramArguments"][1] == str(p.runner_sh)
 
@@ -399,3 +402,45 @@ def test_update_from_1_5_0_syncs_onto_the_new_runtime(system, tmp_path):
     assert launchd.sync(Settings()) == ("reinstalled", list(launchd.JOBS))
     assert launchd.foreign_jobs() == [] and config.RUNNER.is_file()
     assert system.count("codesign") == 0  # the checkout's signed bundle was carried over
+
+
+def _package(tmp_path: Path, monkeypatch) -> Path:
+    pkg = tmp_path / "checkout/src/monitask_center"
+    (pkg / "locales").mkdir(parents=True)
+    (pkg / "engine.py").write_text("v1\n")
+    (pkg / "locales/core.json").write_text("{}\n")
+    (pkg / "__pycache__").mkdir()
+    (pkg / "__pycache__/engine.pyc").write_text("cache")
+    monkeypatch.setattr(install, "PACKAGE", pkg)
+    return pkg
+
+
+def test_sync_package_copies_the_package_once_and_follows_edits(tmp_path, monkeypatch):
+    pkg = _package(tmp_path, monkeypatch)
+    p = install.Paths()
+    copy = p.src / "monitask_center"
+    assert install.sync_package(p) is True
+    assert (copy / "engine.py").read_text() == "v1\n" and (copy / "locales/core.json").is_file()
+    assert not (copy / "__pycache__").exists()
+    (copy / "__pycache__").mkdir()  # what the launchd python writes next to the copy
+    assert install.sync_package(p) is False
+    (pkg / "engine.py").write_text("v2, edited in the checkout\n")
+    (pkg / "locales/core.json").unlink()
+    assert install.sync_package(p) is True
+    assert (copy / "engine.py").read_text() == "v2, edited in the checkout\n"
+    assert not (copy / "locales/core.json").exists()
+    assert sorted(x.name for x in p.src.iterdir()) == ["monitask_center"]  # no staging leftovers
+
+
+def test_migrate_moves_a_runner_off_the_package_in_place_once(system, tmp_path, monkeypatch):
+    """1.9.1 and older: run.sh imported the checkout's (or the venv's) package in place."""
+    _package(tmp_path, monkeypatch)
+    assert run() == 0
+    p = install.Paths()
+    p.pylibs.mkdir(exist_ok=True)  # the fake pip creates nothing; a built runtime has it
+    old = p.runner_sh.read_text().replace(str(p.src), str(install.PACKAGE.parent))
+    p.runner_sh.write_text(old)
+    shutil.rmtree(p.src)
+    assert install.migrate(Settings()) == t("install.migrated", path=p.root)
+    assert f"{p.pylibs}:{p.src}" in p.runner_sh.read_text() and (p.src / "monitask_center/engine.py").is_file()
+    assert install.migrate(Settings()) is None
