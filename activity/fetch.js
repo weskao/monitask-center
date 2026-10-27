@@ -12,6 +12,8 @@ const { PROFILE_DIR, workWindow, fetchActivity, taipeiParts } = require('./lib')
 const TG_SEND = path.join(os.homedir(), '.claude/scripts/tg-send.sh');
 const REPO_DIR = path.join(__dirname, '..');
 const FORCE = process.argv.includes('force');
+// record = only save today's rate for `monitask-center --config`: no report, no alert, at any hour.
+const RECORD = process.argv.includes('record');
 
 function host() {
   try { return execFileSync('/usr/sbin/scutil', ['--get', 'ComputerName'], { encoding: 'utf8' }).trim(); }
@@ -80,9 +82,9 @@ function alertLow(a, w, machine, hour, minute) {
     process.exitCode = 1;
     return;
   }
-  const report = w.ok || FORCE;
-  const alert = Boolean(w.alert) && !FORCE;
-  if (!report && !alert) { log(`非工作時窗（今日=${w.shift}），略過`); return; }
+  const report = !RECORD && (w.ok || FORCE);
+  const alert = !RECORD && Boolean(w.alert) && !FORCE;
+  if (!report && !alert && !RECORD) { log(`非工作時窗（今日=${w.shift}），略過`); return; }
   if (!TTY) log(`本次執行：整點報表=${report ? '是' : '否'} 低活動率檢查=${alert ? `是（門檻 ${w.threshold}%）` : '否'}`);
 
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
