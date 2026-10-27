@@ -1,3 +1,8 @@
+## [1.9.6] - 2026-10-27
+
+### 🐛 Bug Fixes
+
+- **install:** Refresh the activity job's copy on upgrade
 ## [1.9.5] - 2026-10-27
 
 ### 🚀 Features
