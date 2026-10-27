@@ -1,3 +1,13 @@
+## [1.9.2] - 2026-10-27
+
+### 🚀 Features
+
+- **activity:** Prefer the keychain telegram bot token
+
+### 🐛 Bug Fixes
+
+- **activity:** Run the job outside the protected checkout
+- **install:** Run background jobs from a package copy
 ## [1.9.1] - 2026-10-27
 
 ### 🚀 Features
