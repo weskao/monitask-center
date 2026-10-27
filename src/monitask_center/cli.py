@@ -257,6 +257,8 @@ def _main(raw: list[str]) -> int:
             print(note, file=sys.stderr)
         if note := launchd.install_missing(config.load()):
             print(note, file=sys.stderr)
+        if note := launchd.migrate_activity():
+            print(note, file=sys.stderr)
     if args.config:
         return cmd_config()
     match args.command:

@@ -21,6 +21,9 @@ JOBS = ("check", "overtime")
 # Jobs from the shift-schedule era and older bundle ids; removed on install/uninstall.
 LEGACY_JOBS = ("morning", "lunch", "afternoon", "evening", "night-start", "night-stop", "watch")
 LEGACY_PREFIXES = (PREFIX, "com.dannylin.monitask-center", "com.dannylin.monitask")
+# The optional activity job (written by activity/install.sh) wakes every 10 minutes; activity/lib.js
+# decides at run time whether a tick sends the hourly report or a low activity check.
+ACTIVITY_TICKS = [{"Minute": m} for m in range(0, 60, 10)]
 
 
 def agents_dir() -> Path:
@@ -211,6 +214,25 @@ def install_missing(settings: config.Settings) -> str | None:
         return sync_message("reinstalled", install(settings, missing))
     except (subprocess.CalledProcessError, OSError) as exc:
         return t("launchd.err.migrate", error=describe_error(exc))
+
+
+def migrate_activity() -> str | None:
+    """Upgrade migration: move an activity job on any other schedule (hourly, before low activity
+    alerts) onto ACTIVITY_TICKS. Only the schedule changes; never installs the job. -> a line to log/print, or None."""
+    path = plist_path("activity")
+    try:
+        spec = plistlib.loads(path.read_bytes())
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        return None
+    if not isinstance(spec, dict) or spec.get("StartCalendarInterval") == ACTIVITY_TICKS:
+        return None
+    try:
+        path.write_bytes(plistlib.dumps({**spec, "StartCalendarInterval": ACTIVITY_TICKS}))
+        _launchctl("bootout", _domain(), str(path))
+        _launchctl("bootstrap", _domain(), str(path), check=True)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        return t("launchd.err.activity", error=describe_error(exc))
+    return t("launchd.activity.migrated")
 
 
 def sync_message(state: str, jobs: list[str]) -> str:

@@ -209,6 +209,8 @@ def cmd_check() -> int:
     i18n.set_language(settings.language)
     if note := launchd.install_missing(settings):  # hourly, so an upgrade gets its new jobs unattended
         notify.log(note)
+    if note := launchd.migrate_activity():
+        notify.log(note)
     hour = datetime.now().hour
     # Pure window gate first: no calendar access (download / warning) and no state read.
     action = check.decide(hour, settings, (True, "workday"), "timing")

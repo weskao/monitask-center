@@ -6,6 +6,7 @@ import pytest
 
 from monitask_center import config, launchd
 from monitask_center.config import Settings
+from monitask_center.i18n import t
 
 
 @pytest.fixture
@@ -279,3 +280,56 @@ def test_unchecked_launchctl_child_stderr_never_reaches_terminal(monkeypatch, ca
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: real_run([sys.executable, "-c", script], **kw))
     launchd._launchctl("bootout", "gui/501", "/x.plist")
     assert capfd.readouterr() == ("", "")
+
+
+def _activity_plist(ticks):
+    path = launchd.plist_path("activity")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(plistlib.dumps({
+        "Label": "com.monitask-center.activity",
+        "ProgramArguments": ["/bin/bash", "/checkout/activity/run.sh", "fetch"],
+        "EnvironmentVariables": {"MONITASK_ACTIVITY_NODE": "/opt/node"},
+        "StartCalendarInterval": ticks,
+    }))
+    return path
+
+
+def test_activity_ticks_cover_every_alert_frequency():
+    minutes = [tick["Minute"] for tick in launchd.ACTIVITY_TICKS]
+    assert minutes == list(range(0, 60, 10))
+    assert all(f % 10 == 0 for f in config.ALERT_MINUTES)  # checks counted from the window start land on ticks
+
+
+@pytest.mark.parametrize("old_ticks", [
+    [{"Minute": 0}],                             # what activity/install.sh wrote before 1.10
+    [{"Minute": m} for m in range(0, 60, 5)],    # the unreleased 5-minute schedule
+])
+def test_migrate_activity_moves_the_job_to_ten_minute_ticks_once(calls, old_ticks):
+    assert launchd.migrate_activity() is None and calls == []  # no activity job: not ours to add
+    path = _activity_plist(old_ticks)
+    assert launchd.migrate_activity() == t("launchd.activity.migrated")
+    spec = plistlib.loads(path.read_bytes())
+    assert spec["StartCalendarInterval"] == launchd.ACTIVITY_TICKS
+    assert spec["ProgramArguments"][1] == "/checkout/activity/run.sh"
+    assert spec["EnvironmentVariables"] == {"MONITASK_ACTIVITY_NODE": "/opt/node"}
+    assert [c[0] for c in calls] == ["bootout", "bootstrap"]
+    calls.clear()
+    assert launchd.migrate_activity() is None and calls == []
+
+
+def test_migrate_activity_failure_is_a_message(monkeypatch):
+    _activity_plist([{"Minute": 0}])
+
+    def fail(*args, check=False):
+        if check:
+            raise launchd.LaunchdError(5, ["launchctl"], "Bootstrap failed")
+
+    monkeypatch.setattr(launchd, "_launchctl", fail)
+    assert "Bootstrap failed" in launchd.migrate_activity()
+
+
+def test_migrate_activity_ignores_an_unreadable_plist(calls):
+    path = launchd.plist_path("activity")
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a plist")
+    assert launchd.migrate_activity() is None and calls == []

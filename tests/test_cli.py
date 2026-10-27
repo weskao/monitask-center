@@ -217,3 +217,10 @@ def test_activity_without_the_job_points_to_its_installer(monkeypatch, tmp_path,
 def test_every_command_also_answers_to_its_dashed_form(cmd):
     assert cli._normalize_argv([f"--{cmd}", "x"]) == [cmd, "x"]
     assert cli._normalize_argv([cmd, "x"]) == [cmd, "x"]
+
+
+def test_commands_migrate_the_activity_schedule(monkeypatch, capsys):
+    monkeypatch.setattr(launchd, "migrate_activity", lambda: "activity moved")
+    monkeypatch.setattr(status, "snapshot", lambda s: [])
+    assert cli.main(["status"]) == 0
+    assert "activity moved" in capsys.readouterr().err

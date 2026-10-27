@@ -1,5 +1,6 @@
 #!/bin/bash
-# install.sh — launchd job for activity-rate monitoring (fires on the hour; fetch reuses the main program's settings).
+# install.sh — launchd job for activity-rate monitoring (wakes every 10 minutes; fetch reuses the main program's settings
+# to pick the hourly report and the low activity checks, see launchd.ACTIVITY_TICKS).
 #   ./install.sh install | uninstall | reload | status
 set -euo pipefail
 
@@ -58,6 +59,11 @@ cleanup_legacy() {
 
 gen_plist() {
   mkdir -p "$LA" "$LOGDIR"
+  local ticks="" minute
+  for minute in 0 10 20 30 40 50; do
+    ticks="$ticks    <dict><key>Minute</key><integer>$minute</integer></dict>
+"
+  done
   cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -76,8 +82,7 @@ gen_plist() {
   </dict>
   <key>StartCalendarInterval</key>
   <array>
-    <dict><key>Minute</key><integer>0</integer></dict>
-  </array>
+$ticks  </array>
   <key>StandardOutPath</key><string>$LOGDIR/activity.out</string>
   <key>StandardErrorPath</key><string>$LOGDIR/activity.err</string>
   <key>ProcessType</key><string>Background</string>

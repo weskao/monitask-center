@@ -547,3 +547,11 @@ def test_overtime_dialog_maps_buttons(engine, monkeypatch):
     assert engine.ask_overtime() == "continue"
     out["value"] = ""  # gave up
     assert engine.ask_overtime() == ""
+
+
+def test_cmd_check_migrates_the_activity_schedule_unattended(routed, monkeypatch):
+    logged = []
+    monkeypatch.setattr(routed.launchd, "migrate_activity", lambda: "activity moved")
+    monkeypatch.setattr(routed.notify, "log", logged.append)
+    routed.cmd_check()
+    assert "activity moved" in logged

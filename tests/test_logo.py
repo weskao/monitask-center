@@ -92,7 +92,7 @@ def test_tagline_key_exists_is_short_and_is_what_the_menu_draws(monkeypatch):
 
     text = i18n.t("tui.tagline")
     assert text != "tui.tagline" and len(text) <= 14 and present.width(text) <= 28
-    monkeypatch.setattr(menu, "_terminal_size", lambda _out: os.terminal_size((100, 32)))
+    monkeypatch.setattr(menu, "_terminal_size", lambda _out: os.terminal_size((100, 34)))
     monkeypatch.setenv("NO_COLOR", "1")
 
     class Tty:

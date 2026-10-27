@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from monitask_center import config
+from monitask_center import config, launchd
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -177,6 +177,7 @@ esac
     else:
         assert result.returncode == 0, result.stderr
         spec = plistlib.loads(plist.read_bytes())
+        assert spec["StartCalendarInterval"] == launchd.ACTIVITY_TICKS
         assert spec["EnvironmentVariables"]["MONITASK_ACTIVITY_NODE"] == str(node)
         assert str(node.resolve()) in result.stdout and "完整磁碟存取權" in result.stdout
         assert "bootstrap" in log.read_text()
@@ -264,15 +265,18 @@ def test_activity_reports_the_latest_slot_with_its_own_time(slots, expected):
 
 
 def _deliver(status: str, receipt: str, daily: str, tty: bool,
-             slots: str = "") -> subprocess.CompletedProcess:
+             slots: str = "", window: dict | None = None) -> subprocess.CompletedProcess:
     script = """
-const [status, receipt, daily, tty, slots] = process.argv.slice(1);
+const [status, receipt, daily, tty, slots, window] = process.argv.slice(1);
 process.stdout.isTTY = tty === 'true';
 const lib = require('./activity/lib');
-lib.workWindow = () => ({ok: true, reportDate: '10/07/2026'});
+lib.workWindow = () => JSON.parse(window);
 const child = require('child_process');
 child.execFileSync = () => 'Test Host';
-child.spawnSync = () => ({status: Number(status), stderr: receipt});
+child.spawnSync = (_cmd, args) => {
+  console.error('SENT ' + JSON.stringify(args[2]));
+  return {status: Number(status), stderr: receipt};
+};
 const request = {get: async (url) => ({status: () => 200, ok: () => true,
   url: () => url,
   text: async () => new URL(url).pathname === '/report'
@@ -290,5 +294,107 @@ Module._load = function(name, ...args) {
 require('./activity/fetch');
 """
     env = {k: v for k, v in os.environ.items() if k != "NO_COLOR"}
-    return subprocess.run(["node", "-e", script, status, receipt, daily, str(tty).lower(), slots],
+    window = window or {"ok": True, "reportDate": "10/07/2026"}
+    return subprocess.run(["node", "-e", script, status, receipt, daily, str(tty).lower(), slots,
+                           json.dumps(window)],
                           cwd=ROOT, capture_output=True, text=True, env=env)
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("node"),
+                    reason="activity runs on macOS with Node")
+@pytest.mark.parametrize("clock,minutes,report,alert", [
+    ("11:00", 10, True, True),
+    ("11:03", 10, True, True),     # launchd fired a little late: still this tick
+    ("11:10", 10, False, True),
+    ("11:15", 10, False, False),   # launchd 5 minutes late: too late for the 11:10 check
+    ("11:10", 20, False, False),   # a 10-minute tick between two 20-minute checks
+    ("11:20", 20, False, True),
+    ("11:40", 40, False, True),    # counted from the 11:00 start, not from the top of the hour
+    ("12:00", 40, False, False),
+    ("13:40", 40, False, True),    # 160 minutes after 11:00
+    ("13:20", 40, False, False),   # 140 minutes: between checks
+    ("14:30", 50, False, False),   # 210 minutes: between checks
+    ("15:10", 50, False, True),    # 250 minutes after 11:00
+    ("11:30", 60, False, False),
+    ("09:50", 10, False, False),   # before the start hour
+    ("12:20", 10, False, False),   # lunch
+    ("18:00", 10, True, True),     # the last check of the day
+    ("18:03", 10, True, True),     # ... started a little late: still the 18:00 check
+    ("18:10", 10, False, False),
+])
+def test_activity_alert_ticks_follow_the_check_frequency(clock, minutes, report, alert):
+    config.save(config.Settings(start_hour=11, activity_check_minutes=minutes,
+                                activity_alert_percent=55))
+    cache = config.home_dir() / "holidays/2026.json"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps([{"date": "20261007", "isHoliday": False}]))
+    hour, minute = map(int, clock.split(":"))
+    script = """
+const OriginalDate = Date;
+global.Date = class extends OriginalDate {
+  constructor(...args) { super(...(args.length ? args : [process.argv[1]])); }
+};
+console.log(JSON.stringify(require('./activity/lib').workWindow()));
+"""
+    result = subprocess.run(["node", "-e", script, f"2026-10-07T{hour - 8:02d}:{minute:02d}:00Z"],
+                            cwd=ROOT, env={**os.environ, "MONITASK_ACTIVITY_PYTHON": sys.executable},
+                            capture_output=True, text=True, check=True)
+    window = json.loads(result.stdout)
+    assert (window["ok"], window["alert"]) == (report, alert)
+    assert window["threshold"] == 55
+    assert window["state"] == str(config.home_dir() / "activity-alert.json")
+
+
+SLOT = '<span class="screen_time"> 14:20 </span><span>40% 的 10 分钟。</span>'
+RECEIPT = "tg-send: sendMessage OK message_id=123"
+
+
+def _sent(result: subprocess.CompletedProcess) -> list[str]:
+    return [json.loads(line[5:]) for line in result.stderr.splitlines() if line.startswith("SENT ")]
+
+
+def _alert_window(tmp_path, report=False) -> dict:
+    return {"ok": report, "alert": True, "threshold": 60, "iso": "2026-10-07",
+            "reportDate": "10/07/2026", "state": str(tmp_path / "activity-alert.json")}
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+def test_activity_below_threshold_alerts_once_per_slot_with_an_explanation(tmp_path):
+    window = _alert_window(tmp_path)
+    first = _deliver("0", RECEIPT, "55.2", tty=False, slots=SLOT, window=window)
+    assert first.returncode == 0
+    [message] = _sent(first)
+    assert message.startswith("⚠️ Monitask 活動率偏低")
+    assert "今日活動 55.2%，低於提醒門檻 60%（差 4.8 個百分點）" in message
+    assert "最近紀錄 14:20：40%（10 分鐘）" in message
+    assert "離座" in message and "🖥️ Test Host" in message
+    again = _deliver("0", RECEIPT, "55.2", tty=False, slots=SLOT, window=window)
+    assert again.returncode == 0 and _sent(again) == []
+    newer = SLOT + '<span class="screen_time"> 14:30 </span><span>30% 的 10 分钟。</span>'
+    assert len(_sent(_deliver("0", RECEIPT, "54", tty=False, slots=newer, window=window))) == 1
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+def test_activity_at_or_above_threshold_sends_nothing_on_an_alert_tick(tmp_path):
+    result = _deliver("0", RECEIPT, "60", tty=False, slots=SLOT, window=_alert_window(tmp_path))
+    assert result.returncode == 0 and _sent(result) == []
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+def test_activity_failed_alert_delivery_is_retried_next_tick(tmp_path):
+    window = _alert_window(tmp_path)
+    assert len(_sent(_deliver("1", "send failed", "55", tty=False, slots=SLOT, window=window))) == 1
+    assert len(_sent(_deliver("0", RECEIPT, "55", tty=False, slots=SLOT, window=window))) == 1
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+def test_activity_report_tick_sends_the_report_and_the_alert(tmp_path):
+    result = _deliver("0", RECEIPT, "55", tty=False, slots=SLOT, window=_alert_window(tmp_path, True))
+    report, alert = _sent(result)
+    assert report.startswith("📊 Monitask 活動率") and alert.startswith("⚠️ Monitask 活動率偏低")
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
+def test_activity_fetch_failure_on_an_alert_only_tick_is_logged_not_sent(tmp_path):
+    result = _deliver("0", RECEIPT, "101", tty=False, window=_alert_window(tmp_path))
+    assert _sent(result) == [] and "報表資料缺少有效的活動率" in result.stdout

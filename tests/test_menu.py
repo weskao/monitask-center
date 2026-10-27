@@ -504,13 +504,13 @@ def test_logo_panel_never_overflows_in_any_size(monkeypatch, columns, lines, col
 
 
 def test_the_logo_shows_at_80x26_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):
-    # 16 setting rows: logo + both status lines now needs 30 rows.
-    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 30, False)[0]]
+    # 18 setting rows: logo + both status lines now needs 32 rows.
+    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 32, False)[0]]
     assert " " * logo.indent(80, logo.SMALL) + logo.SMALL[0] in plain  # the 3-row tier keeps both status lines
     assert t("tui.tagline") not in "\n".join(plain)
     assert any("monitask: timing" in line for line in plain)
     assert any("last check 10:00" in line for line in plain)
-    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 34, False)[0]]
+    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 36, False)[0]]
     assert any(t("tui.tagline") in line for line in big)
     assert sum(1 for line in big if any(k in line for k in ("monitask: t", "last check", "next check",
                                                               "workday: yes"))) >= 3
@@ -546,9 +546,9 @@ def test_interactive_surface_keeps_colour_and_no_color_still_wins(monkeypatch):
 
 
 @pytest.mark.parametrize("columns,lines,logo_shown", [
-    # 16 setting rows now, so the status block needs 26 rows and the logo 28. Notes drop
-    # before rows (present.compose), so below 26 the status line is what goes, not a row.
-    (63, 26, False), (63, 28, True), (46, 26, False), (46, 28, True), (45, 26, False), (45, 28, False),
+    # 18 setting rows now, so the status block needs 28 rows and the logo 30. Notes drop
+    # before rows (present.compose), so below 28 the status line is what goes, not a row.
+    (63, 28, False), (63, 30, True), (46, 28, False), (46, 30, True), (45, 28, False), (45, 30, False),
 ])
 def test_monitask_status_line_outranks_the_logo_on_short_terminals(monkeypatch, columns, lines, logo_shown):
     for panel in _panel(monkeypatch, columns, lines, False):
@@ -714,3 +714,21 @@ def test_overtime_numbered_entry_accepts_only_valid_clock_times():
     assert config.load().overtime_minutes == 18 * 60 + 30
     numbered(f"{n('overtime_time')}\n20:30\nq\n")
     assert config.load().overtime_minutes == 20 * 60 + 30
+
+
+@pytest.mark.parametrize("key,field,shown,stepped,wrapped", [
+    ("activity_alert", "activity_alert_percent", "60%", 65, (90, 10)),
+    ("activity_minutes", "activity_check_minutes", t("tui.value.minutes", n=10), 20, (60, 10)),
+])
+def test_activity_alert_rows_step_through_fixed_choices(key, field, shown, stepped, wrapped):
+    row = next(r for r in menu.ROWS if r.key == key)
+    s = config.Settings()
+    assert menu._value(menu.State(s), row) == shown
+    assert getattr(menu._step(s, row, 1), field) == stepped
+    last, first = wrapped
+    assert getattr(menu._step(replace_settings(**{field: last}), row, 1), field) == first
+
+
+def test_activity_alert_numbered_rows_step_without_typing():
+    _, output = numbered(f"{n('activity_alert')}\n{n('activity_minutes')}\nq\n")
+    assert (config.load().activity_alert_percent, config.load().activity_check_minutes) == (65, 20)

@@ -35,10 +35,11 @@ CARET = "▏"
 @dataclass(frozen=True)
 class Row:
     key: str          # tui.row.<key> label, tui.help.<key> help
-    kind: str         # hour | clock | interval | toggle | language | vacation | install
+    kind: str         # hour | clock | interval | toggle | percent | minutes | language | vacation | install
     field: str = ""
     low: int = 0
     high: int = 0
+    choices: tuple[int, ...] = ()  # percent / minutes: stepped through (wrapping), never typed
 
 
 ROWS = (
@@ -51,6 +52,8 @@ ROWS = (
     Row("lunch_end", "hour", "lunch_end_hour", 1, 24),
     Row("overtime_prompt", "toggle", "overtime_prompt"),
     Row("overtime_time", "clock", "overtime_minutes", config.OVERTIME_EARLIEST, config.OVERTIME_LATEST),
+    Row("activity_alert", "percent", "activity_alert_percent", choices=config.ALERT_PERCENTS),
+    Row("activity_minutes", "minutes", "activity_check_minutes", choices=config.ALERT_MINUTES),
     Row("language", "language", "language"),
     Row("update_check", "toggle", "update_check"),
     Row("telegram", "toggle", "telegram"),
@@ -61,7 +64,7 @@ ROWS = (
     Row("vacation", "vacation", "vacation"),
     Row("install", "install"),
 )
-ADJUSTABLE = ("hour", "clock", "interval", "toggle", "language")
+ADJUSTABLE = ("hour", "clock", "interval", "toggle", "percent", "minutes", "language")
 # Rows edited by typing rather than by stepping a value.
 TYPED = ("text", "secret")
 TEXT_MAX = 128  # a pasted token/chat id, not a format check (telegram_kit's own bound)
@@ -129,6 +132,10 @@ def _value(state: State, row: Row, s: config.Settings | None = None) -> str:
         return t("tui.value.hours", n=v)
     if row.kind == "toggle":
         return t("common.on" if v else "common.off")
+    if row.kind == "percent":
+        return f"{v}%"
+    if row.kind == "minutes":
+        return t("tui.value.minutes", n=v)
     if row.kind == "language":
         return f"{t('tui.language.self', v)} ({v})"
     if row.kind == "vacation":
@@ -163,6 +170,9 @@ def _step(s: config.Settings, row: Row, direction: int) -> config.Settings:
         names = i18n.available() or [i18n.DEFAULT_LANGUAGE]
         index = names.index(current) if current in names else -1
         return _with(s, row, names[(index + direction) % len(names)])
+    if row.choices:
+        index = row.choices.index(current) if current in row.choices else -1
+        return _with(s, row, row.choices[(index + direction) % len(row.choices)])
     low, high = _bounds(row, s)
     step = config.OVERTIME_STEP if row.kind == "clock" else 1
     return _with(s, row, min(max(current + direction * step, low), high))
@@ -601,7 +611,7 @@ def _numbered_row(state: State, row: Row, stdin: IO[str], out: IO[str]) -> None:
         state.note = ("info", t("tui.readonly"))
     elif row.kind == "vacation":
         _vacation_numbered(state, stdin, out)
-    elif row.kind in ("toggle", "language"):
+    elif row.kind in ("toggle", "percent", "minutes", "language"):
         _commit(state, _step(state.settings, row, 1))
     elif row.kind == "text":
         answer = _ask(t("tui.prompt.text_ask", label=t(f"tui.row.{row.key}"),

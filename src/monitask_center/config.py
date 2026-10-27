@@ -22,6 +22,11 @@ MAX_RANGE_DAYS = 366
 OVERTIME_EARLIEST = 18 * 60
 OVERTIME_LATEST = 20 * 60 + 30
 OVERTIME_STEP = 30
+# Low activity alert: threshold (%) and check frequency (minutes) are picked from these, never typed.
+# Frequencies are whole tens and counted from the start hour, so checks land on the activity job's
+# 10-minute ticks.
+ALERT_PERCENTS = tuple(range(10, 95, 5))
+ALERT_MINUTES = tuple(range(10, 61, 10))
 
 
 def home_dir() -> Path:
@@ -55,6 +60,8 @@ class Settings:
     overtime_prompt: bool = True     # workdays: still timing at overtime_minutes -> ask to stop
     overtime_minutes: int = 18 * 60 + 30  # minutes after midnight (18:30)
     telegram: bool = True            # False = macOS notifications only
+    activity_alert_percent: int = 60  # today's activity below this -> Telegram alert (activity job)
+    activity_check_minutes: int = 10  # how often the activity job compares it, in work hours
     update_check: bool = True        # background check for a newer release, offered after a command
     telegram_chat_id: str = ""       # an identifier, not a secret: stored here in plain JSON.
                                      # The bot token is NOT a field -- it lives in the OS
@@ -95,6 +102,8 @@ def validate(s: Settings) -> Settings:
         raise ValueError("lunch")
     if not valid_overtime(s.overtime_minutes):
         raise ValueError("overtime")
+    if s.activity_alert_percent not in ALERT_PERCENTS or s.activity_check_minutes not in ALERT_MINUTES:
+        raise ValueError("activity_alert")
     language = s.language if s.language in i18n.available() else i18n.DEFAULT_LANGUAGE
     days = sorted({d.isoformat() for d in map(parse_date, s.vacation) if d})
     return replace(s, language=language, vacation=tuple(days))
@@ -181,6 +190,10 @@ def load(path: Path | None = None) -> Settings:
                            lunch_end_hour=base.lunch_end_hour)
     if not valid_overtime(settings.overtime_minutes):
         settings = replace(settings, overtime_minutes=base.overtime_minutes)
+    if settings.activity_alert_percent not in ALERT_PERCENTS:
+        settings = replace(settings, activity_alert_percent=base.activity_alert_percent)
+    if settings.activity_check_minutes not in ALERT_MINUTES:
+        settings = replace(settings, activity_check_minutes=base.activity_check_minutes)
     return validate(settings)
 
 

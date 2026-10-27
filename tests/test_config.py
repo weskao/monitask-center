@@ -240,3 +240,18 @@ def test_overtime_defaults_and_bad_stored_value_falls_back():
     config.config_path().write_text('{"overtime_minutes": 1000, "overtime_prompt": false}')
     loaded = config.load()
     assert loaded.overtime_minutes == 18 * 60 + 30 and loaded.overtime_prompt is False
+
+
+def test_activity_alert_defaults_and_bad_stored_values_fall_back():
+    assert (Settings().activity_alert_percent, Settings().activity_check_minutes) == (60, 10)
+    assert config.ALERT_PERCENTS == tuple(range(10, 95, 5))
+    assert config.ALERT_MINUTES == (10, 20, 30, 40, 50, 60)
+    config.config_path().parent.mkdir(parents=True, exist_ok=True)
+    config.config_path().write_text('{"activity_alert_percent": 62, "activity_check_minutes": 5}')
+    assert (config.load().activity_alert_percent, config.load().activity_check_minutes) == (60, 10)
+    config.config_path().write_text('{"activity_alert_percent": 85, "activity_check_minutes": 30}')
+    assert (config.load().activity_alert_percent, config.load().activity_check_minutes) == (85, 30)
+    with pytest.raises(ValueError, match="activity_alert"):
+        config.validate(Settings(activity_alert_percent=95))
+    with pytest.raises(ValueError, match="activity_alert"):
+        config.validate(Settings(activity_check_minutes=15))  # off the 10-minute ticks

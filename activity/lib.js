@@ -23,27 +23,36 @@ function taipeiParts() {
 
 function isoOf(y, m, d) { return `${y}-${m}-${d}`; }
 
-// Whether we are now inside the work window when the activity rate should be notified, and which day's report to fetch.
+// What this 10-minute tick does: ok = send the hourly report, alert = compare today's rate with the
+// low activity threshold. Plus which day's report to fetch and where the alert remembers its last slot.
 function workWindow() {
-  const { year, month, day, hour } = taipeiParts();
+  const { year, month, day, hour, minute } = taipeiParts();
   const iso = isoOf(year, month, day);
   const root = path.join(HERE, '..');
   // Reuse the timer checker's settings and holiday calendar, not a second schedule.
+  // A tick counts within 5 minutes of its slot, so a slightly late launchd start still runs.
+  // Alert checks are counted from the start hour, so 40 / 50 minutes keep their spacing across hours.
   const script = `import json, sys
 from datetime import date
 from monitask_center import config, workday
 s = config.load()
-h = int(sys.argv[2])
-ok = s.telegram and h in s.check_hours() and not s.is_lunch(h)
+h, m = int(sys.argv[2]), int(sys.argv[3])
+gate = s.telegram and not s.is_lunch(h)
+ok = gate and m < 5 and h in s.check_hours()
+since = h * 60 + m - s.start_hour * 60
+late = since % s.activity_check_minutes  # minutes past the check slot this tick belongs to
+alert = gate and late < 5 and 0 <= since - late <= (s.end_hour - s.start_hour) * 60
 reason = "outside"
-if ok:
-    ok, reason = workday.peek_status(date.fromisoformat(sys.argv[1]), s)
-print(json.dumps({"ok": ok, "shift": reason}))`;
+if ok or alert:
+    workday_ok, reason = workday.peek_status(date.fromisoformat(sys.argv[1]), s)
+    ok, alert = ok and workday_ok, alert and workday_ok
+print(json.dumps({"ok": ok, "alert": alert, "shift": reason, "threshold": s.activity_alert_percent,
+                  "state": str(config.home_dir() / "activity-alert.json")}))`;
   // The runtime `monitask-center install` builds: its python copy, plus pylibs for telegram-kit.
   const runtime = path.join(require('os').homedir(), 'Library/Application Support/MonitaskCenter');
   const python = process.env.MONITASK_ACTIVITY_PYTHON
     || path.join(runtime, 'MonitaskCenter.app/Contents/MacOS/python-runner');
-  const result = execFileSync(python, ['-c', script, iso, hour], { encoding: 'utf8', timeout: 15000,
+  const result = execFileSync(python, ['-c', script, iso, hour, minute], { encoding: 'utf8', timeout: 15000,
     env: { ...process.env, PYTHONPATH: `${path.join(root, 'src')}:${path.join(runtime, 'pylibs')}` } });
   return { ...JSON.parse(result), iso, reportDate: `${month}/${day}/${year}` };
 }
