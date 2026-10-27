@@ -83,7 +83,7 @@ bash activity/install.sh install
 
 - **執行環境全自動**：全部放在 `~/Library/Application Support/MonitaskCenter/`，不依賴任何 checkout。缺少 `python@3.13` 時用 Homebrew 安裝，把 PyObjC 裝到 `pylibs/`；產生 `MonitaskCenter.app`(內含 python runner)與 launchd 進入點 `run.sh`；runner 損壞或版本不符時自動重建並重新簽章。再次執行只修復壞掉的部分，所以已授予的 Accessibility 權限會保留。
 - **安裝與狀態監看不需 Accessibility**。若要自動播放/暫停(`--config` 的「自動播放/暫停」，預設開啟)或下班停止計時，仍需到「系統設定 → 隱私權與安全性 → 輔助使用」授權 `MonitaskCenter.app`(`install` 會檢查並引導，見上)；未授權時動作會回報失敗並通知、結果寫入 `monitask.log`，且 runner 會請 macOS 重新跳出授權詢問，監看與一般提醒照常運作。關閉「自動播放/暫停」後只通知、不操作 Monitask，也就不需要此授權。`dump-windows` 診斷也需要 AX。
-- **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入 `~/.monitask-center/.env`(權限 600，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。Telegram 關閉或傳送失敗時退回 macOS 通知。
+- **Telegram 是選用功能**：token 存於作業系統認證存放區(macOS Keychain / Secret Service / Windows Credential Manager)，以 `monitask-center --config` 的「Telegram Bot Token」列編輯，畫面上只顯示遮罩；chat id 是識別碼而非密鑰，直接存於 `config.json`。設定完成後會立即發送一則測試通知；安裝程式不檢驗是否送達，請自行到 Telegram 確認。本機沒有認證存放區時，`install` 才退回寫入 `~/.monitask-center/.env`(權限 600，範例見 `.env.example`)；既有的 `.env` token 會在下次 `install` 自動搬進認證存放區並從檔案移除。活動率排程(`activity/run.sh`)同樣優先使用 Keychain 的 token，專案 `.env` 的 `TG_BOT_TOKEN` 只在 Keychain 沒有時使用。Telegram 關閉或傳送失敗時退回 macOS 通知。
 
 ## 設定:`monitask-center --config`
 
