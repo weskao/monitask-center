@@ -1,3 +1,8 @@
+## [1.9.1] - 2026-10-27
+
+### 🚀 Features
+
+- **activity:** Alert when daily activity is low
 ## [1.9.0] - 2026-10-22
 
 ### 🚀 Features
