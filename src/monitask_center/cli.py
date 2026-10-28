@@ -259,9 +259,9 @@ def _main(raw: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(raw)
     if args.command not in ("install", "uninstall", *EXEC_COMMANDS):  # check migrates under launchd
-        # install.migrate first: it builds the runtime install_missing needs (and moves the activity job).
+        # install.migrate first: it builds the runtime sync_drifted needs (and moves the activity job).
         # Notes also go to monitask.log, like the hourly check's, so an upgrade stays traceable later.
-        for migrate in (lambda: install.migrate(config.load()), lambda: launchd.install_missing(config.load())):
+        for migrate in (lambda: install.migrate(config.load()), lambda: launchd.sync_drifted(config.load())):
             if note := migrate():
                 print(note, file=sys.stderr)
                 notify.log(note)

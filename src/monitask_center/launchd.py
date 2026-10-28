@@ -216,6 +216,17 @@ def install_missing(settings: config.Settings) -> str | None:
         return t("launchd.err.migrate", error=describe_error(exc))
 
 
+def sync_drifted(settings: config.Settings) -> str | None:
+    """Every CLI command (never the check job: it would boot itself out): reload jobs that are missing or whose
+    plist no longer matches the settings, e.g. a settings change that never reached launchd.
+    -> a line to log/print when it did something, else None."""
+    try:
+        state, jobs = sync(settings)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        return t("launchd.err.sync", error=describe_error(exc))
+    return sync_message(state, jobs) if state == "reinstalled" else None
+
+
 def activity_runner() -> Path:
     """The run.sh the activity job runs: the copy activity/install.sh makes outside the checkout."""
     return config.data_dir() / "activity/run.sh"

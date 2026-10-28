@@ -27,6 +27,7 @@
   "launchd.err.installer_code": "install.sh 結束碼 {code}",
   "launchd.err.installer_unmoved": "install.sh 已執行,但排程仍指向專案目錄",
   "launchd.err.migrate": "補裝新版排程失敗,請執行 monitask-center install:{error}",
+  "launchd.err.sync": "排程與設定不符,自動同步失敗,請執行 monitask-center install:{error}",
   "config.corrupt_saved": "已將損毀的設定檔備份至 {path}",
   "launchd.sync.reinstalled": "已重新載入排程:{jobs}"
 }

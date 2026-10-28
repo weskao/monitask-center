@@ -82,6 +82,28 @@ def test_install_missing_failure_is_a_message(calls, monkeypatch):
     assert "Bootstrap failed" in launchd.install_missing(Settings())
 
 
+def test_sync_drifted_reloads_only_stale_jobs(calls):
+    assert launchd.sync_drifted(Settings()) is None  # nothing installed: not ours to install
+    launchd.install(Settings(start_hour=6))  # a schedule change that never reached launchd
+    calls.clear()
+    note = launchd.sync_drifted(Settings())
+    assert "check" in note and "overtime" not in note
+    assert launchd.stale_jobs(Settings()) == []
+    assert {c[-1] for c in calls} == {str(launchd.plist_path("check"))}
+    calls.clear()
+    assert launchd.sync_drifted(Settings()) is None and calls == []
+
+
+def test_sync_drifted_failure_is_a_message(calls, monkeypatch):
+    launchd.install(Settings(start_hour=6))
+
+    def fail(*_a, **_k):
+        raise launchd.LaunchdError(5, ["launchctl"], "Bootstrap failed")
+
+    monkeypatch.setattr(launchd, "install", fail)
+    assert "Bootstrap failed" in launchd.sync_drifted(Settings())
+
+
 def test_install_removes_legacy_plists(calls):
     launchd.agents_dir().mkdir(parents=True)
     legacy = [launchd.plist_path(j, p)
