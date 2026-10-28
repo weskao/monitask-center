@@ -1,6 +1,6 @@
 [project]
 name = "monitask-center"
-version = "1.9.6"
+version = "1.9.7"
 description = "Workday Monitask timer checks driven by launchd"
 readme = "README.md"
 requires-python = ">=3.10"

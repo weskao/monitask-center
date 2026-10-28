@@ -1,3 +1,8 @@
+## [1.9.7] - 2026-10-28
+
+### 🚀 Features
+
+- **launchd:** Add sync_drifted to auto-reload stale jobs on cli
 ## [1.9.6] - 2026-10-27
 
 ### 🐛 Bug Fixes
