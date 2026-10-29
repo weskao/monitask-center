@@ -1,3 +1,8 @@
+## [1.10.0] - 2026-10-29
+
+### 🚀 Features
+
+- **config:** Add on/off switch for activity alerts
 ## [1.9.7] - 2026-10-28
 
 ### 🚀 Features
