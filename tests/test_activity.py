@@ -435,6 +435,27 @@ console.log(JSON.stringify(require('./activity/lib').workWindow()));
     assert window["state"] == str(config.home_dir() / "activity-alert.json")
 
 
+@pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("node"),
+                    reason="activity runs on macOS with Node")
+def test_activity_alert_switched_off_skips_the_check_but_keeps_the_report():
+    config.save(config.Settings(start_hour=11, activity_alert=False))
+    cache = config.home_dir() / "holidays/2026.json"
+    cache.parent.mkdir(parents=True)
+    cache.write_text(json.dumps([{"date": "20261007", "isHoliday": False}]))
+    script = """
+const OriginalDate = Date;
+global.Date = class extends OriginalDate {
+  constructor(...args) { super(...(args.length ? args : [process.argv[1]])); }
+};
+console.log(JSON.stringify(require('./activity/lib').workWindow()));
+"""
+    result = subprocess.run(["node", "-e", script, "2026-10-07T03:00:00Z"],  # 11:00 Taipei: a report + alert tick
+                            cwd=ROOT, env={**os.environ, "MONITASK_ACTIVITY_PYTHON": sys.executable},
+                            capture_output=True, text=True, check=True)
+    window = json.loads(result.stdout)
+    assert (window["ok"], window["alert"]) == (True, False)
+
+
 SLOT = '<span class="screen_time"> 14:20 </span><span>40% 的 10 分钟。</span>'
 RECEIPT = "tg-send: sendMessage OK message_id=123"
 

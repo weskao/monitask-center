@@ -40,6 +40,7 @@ class Row:
     low: int = 0
     high: int = 0
     choices: tuple[int, ...] = ()  # percent / minutes: stepped through (wrapping), never typed
+    needs: str = ""   # a toggle field: while it is off the row is locked (greyed, not editable)
 
 
 ROWS = (
@@ -52,8 +53,11 @@ ROWS = (
     Row("lunch_end", "hour", "lunch_end_hour", 1, 24),
     Row("overtime_prompt", "toggle", "overtime_prompt"),
     Row("overtime_time", "clock", "overtime_minutes", config.OVERTIME_EARLIEST, config.OVERTIME_LATEST),
-    Row("activity_alert", "percent", "activity_alert_percent", choices=config.ALERT_PERCENTS),
-    Row("activity_minutes", "minutes", "activity_check_minutes", choices=config.ALERT_MINUTES),
+    Row("activity_switch", "toggle", "activity_alert"),
+    Row("activity_alert", "percent", "activity_alert_percent", choices=config.ALERT_PERCENTS,
+        needs="activity_alert"),
+    Row("activity_minutes", "minutes", "activity_check_minutes", choices=config.ALERT_MINUTES,
+        needs="activity_alert"),
     Row("language", "language", "language"),
     Row("update_check", "toggle", "update_check"),
     Row("telegram", "toggle", "telegram"),
@@ -153,6 +157,15 @@ def _value(state: State, row: Row, s: config.Settings | None = None) -> str:
     if not installed:
         return t("tui.install.not_installed")
     return t("tui.install.loaded" if loaded else "tui.install.not_loaded")
+
+
+def _locked(s: config.Settings, row: Row) -> bool:
+    return bool(row.needs) and not getattr(s, row.needs)
+
+
+def _locked_note(row: Row) -> tuple[str, str]:
+    switch = next(r for r in ROWS if r.field == row.needs and r.kind == "toggle")
+    return ("info", t("tui.inactive", label=t(f"tui.row.{switch.key}")))
 
 
 def _with(s: config.Settings, row: Row, value: object) -> config.Settings:
@@ -368,10 +381,18 @@ def _main_lines(state: State, selected: int | None, out: IO[str]) -> list[str]:
         label = t(f"tui.row.{row.key}")
         if selected is None:
             label = f"{i + 1:>2}) {label}"
+        if _locked(state.settings, row):
+            items.append((label, t("tui.value.inactive"), "muted"))
+            continue
         value = _value(state, row)
         if i == selected and row.kind in ADJUSTABLE:
             value = f"‹ {value} ›"
-        items.append((label, value, "muted" if row.kind == "install" else "value"))
+        tone = "value"
+        if row.kind == "install":
+            tone = "muted"
+        elif row.kind == "toggle":
+            tone = "ok" if getattr(state.settings, row.field) else "muted"
+        items.append((label, value, tone))
     size = _terminal_size(out)
     numbered = selected is None
     style = _style(state, out, numbered)
@@ -567,13 +588,17 @@ def _tui(state: State, stdin: IO[str], out: IO[str]) -> int:
                 if key in ("up", "down"):
                     selected = (selected + (1 if key == "down" else -1)) % len(ROWS)
                     state.note = ("", "")
-                adjusting = key in ("left", "right", "enter", "space") and row.kind in ADJUSTABLE
+                editing = key in ("left", "right", "enter", "space")
+                locked = _locked(state.settings, row)
+                adjusting = editing and row.kind in ADJUSTABLE and not locked
                 synced = False if adjusting else _settle(state)  # leaving the row
                 if key in ("quit", "esc"):
                     if synced:
                         screen.draw(render())  # show the sync result before leaving
                     break
-                if adjusting:
+                if editing and locked:
+                    state.note = _locked_note(row)
+                elif adjusting:
                     _commit(state, _step(state.settings, row, -1 if key == "left" else 1))
                 elif key in ("left", "right", "enter", "space"):
                     if row.kind == "vacation":
@@ -613,7 +638,9 @@ def _yes(answer: str | None) -> bool:
 
 
 def _numbered_row(state: State, row: Row, stdin: IO[str], out: IO[str]) -> None:
-    if row.kind == "install":
+    if _locked(state.settings, row):
+        state.note = _locked_note(row)
+    elif row.kind == "install":
         state.note = ("info", t("tui.readonly"))
     elif row.kind == "vacation":
         _vacation_numbered(state, stdin, out)

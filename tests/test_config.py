@@ -255,3 +255,13 @@ def test_activity_alert_defaults_and_bad_stored_values_fall_back():
         config.validate(Settings(activity_alert_percent=95))
     with pytest.raises(ValueError, match="activity_alert"):
         config.validate(Settings(activity_check_minutes=15))  # off the 10-minute ticks
+
+
+def test_activity_alert_switch_defaults_on_and_keeps_threshold_while_off():
+    assert Settings().activity_alert is True  # an upgraded config without the key keeps alerting
+    config.config_path().parent.mkdir(parents=True, exist_ok=True)
+    config.config_path().write_text('{"activity_alert": "no"}')
+    assert config.load().activity_alert is True
+    config.save(Settings(activity_alert=False, activity_alert_percent=80, activity_check_minutes=30))
+    loaded = config.load()
+    assert (loaded.activity_alert, loaded.activity_alert_percent, loaded.activity_check_minutes) == (False, 80, 30)

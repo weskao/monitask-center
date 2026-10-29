@@ -60,6 +60,7 @@ class Settings:
     overtime_prompt: bool = True     # workdays: still timing at overtime_minutes -> ask to stop
     overtime_minutes: int = 18 * 60 + 30  # minutes after midnight (18:30)
     telegram: bool = True            # False = macOS notifications only
+    activity_alert: bool = True      # False = the activity job never compares; the two below are kept
     activity_alert_percent: int = 60  # today's activity below this -> Telegram alert (activity job)
     activity_check_minutes: int = 10  # how often the activity job compares it, in work hours
     update_check: bool = True        # background check for a newer release, offered after a command

@@ -46,7 +46,7 @@ gate = s.telegram and not s.is_lunch(h)
 ok = gate and m < 5 and h in s.check_hours()
 since = h * 60 + m - s.start_hour * 60
 late = since % s.activity_check_minutes  # minutes past the check slot this tick belongs to
-alert = gate and late < 5 and 0 <= since - late <= (s.end_hour - s.start_hour) * 60
+alert = gate and s.activity_alert and late < 5 and 0 <= since - late <= (s.end_hour - s.start_hour) * 60
 reason = "outside"
 if ok or alert:
     workday_ok, reason = workday.peek_status(date.fromisoformat(sys.argv[1]), s)

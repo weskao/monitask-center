@@ -504,13 +504,13 @@ def test_logo_panel_never_overflows_in_any_size(monkeypatch, columns, lines, col
 
 
 def test_the_logo_shows_at_80x26_with_two_status_lines_and_at_100x30_with_everything(monkeypatch):
-    # 18 setting rows: logo + both status lines now needs 32 rows.
-    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 32, False)[0]]
+    # 19 setting rows: logo + both status lines now needs 33 rows.
+    plain = [present.strip_ansi(line) for line in _panel(monkeypatch, 80, 33, False)[0]]
     assert " " * logo.indent(80, logo.SMALL) + logo.SMALL[0] in plain  # the 3-row tier keeps both status lines
     assert t("tui.tagline") not in "\n".join(plain)
     assert any("monitask: timing" in line for line in plain)
     assert any("last check 10:00" in line for line in plain)
-    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 36, False)[0]]
+    big = [present.strip_ansi(line) for line in _panel(monkeypatch, 100, 37, False)[0]]
     assert any(t("tui.tagline") in line for line in big)
     assert sum(1 for line in big if any(k in line for k in ("monitask: t", "last check", "next check",
                                                               "workday: yes"))) >= 3
@@ -546,9 +546,9 @@ def test_interactive_surface_keeps_colour_and_no_color_still_wins(monkeypatch):
 
 
 @pytest.mark.parametrize("columns,lines,logo_shown", [
-    # 18 setting rows now, so the status block needs 28 rows and the logo 30. Notes drop
-    # before rows (present.compose), so below 28 the status line is what goes, not a row.
-    (63, 28, False), (63, 30, True), (46, 28, False), (46, 30, True), (45, 28, False), (45, 30, False),
+    # 19 setting rows now, so the status block needs 29 rows and the logo 31. Notes drop
+    # before rows (present.compose), so below 29 the status line is what goes, not a row.
+    (63, 29, False), (63, 31, True), (46, 29, False), (46, 31, True), (45, 29, False), (45, 31, False),
 ])
 def test_monitask_status_line_outranks_the_logo_on_short_terminals(monkeypatch, columns, lines, logo_shown):
     for panel in _panel(monkeypatch, columns, lines, False):
@@ -744,3 +744,49 @@ def test_activity_alert_rows_step_through_fixed_choices(key, field, shown, stepp
 def test_activity_alert_numbered_rows_step_without_typing():
     _, output = numbered(f"{n('activity_alert')}\n{n('activity_minutes')}\nq\n")
     assert (config.load().activity_alert_percent, config.load().activity_check_minutes) == (65, 20)
+
+
+def test_activity_switch_row_sits_above_the_rows_it_controls():
+    keys = [r.key for r in menu.ROWS]
+    i = keys.index("activity_switch")
+    assert keys[i:i + 3] == ["activity_switch", "activity_alert", "activity_minutes"]
+    assert menu.ROWS[i].kind == "toggle" and menu.ROWS[i].field == "activity_alert"
+
+
+def test_activity_switch_off_disables_threshold_and_frequency():
+    _, output = numbered(f"{n('activity_switch')}\n{n('activity_alert')}\n{n('activity_minutes')}\nq\n")
+    s = config.load()
+    assert (s.activity_alert, s.activity_alert_percent, s.activity_check_minutes) == (False, 60, 10)
+    assert output.count(t("tui.value.inactive")) >= 2
+    assert t("tui.inactive", label=t("tui.row.activity_switch")) in output
+
+
+def test_activity_rows_turned_off_cannot_be_stepped_with_arrows(monkeypatch):
+    config.save(config.Settings(activity_alert=False))
+    index = [r.key for r in menu.ROWS].index("activity_alert")
+    _, output = run_tui(monkeypatch, ["down"] * index + ["right", "left", "enter", "quit"])
+    assert config.load().activity_alert_percent == 60
+    last = "\n".join(frames(output)[-1])
+    assert "‹" not in SGR.sub("", last)  # no stepper arrows on a locked row
+    assert t("tui.inactive", label=t("tui.row.activity_switch")) in SGR.sub("", last)
+
+
+def test_activity_switch_back_on_restores_the_kept_values():
+    config.save(config.Settings(activity_alert=False, activity_alert_percent=80))
+    numbered(f"{n('activity_switch')}\n{n('activity_alert')}\nq\n")
+    s = config.load()
+    assert (s.activity_alert, s.activity_alert_percent) == (True, 85)
+
+
+@pytest.mark.parametrize("on,tone", [(True, present.GREEN), (False, present.GREY)])
+def test_toggle_values_are_colored_by_state(monkeypatch, on, tone):
+    config.save(config.Settings(activity_alert=on))
+    _, output = run_tui(monkeypatch, ["quit"])
+    word = t("common.on" if on else "common.off")
+    assert f"\x1b[{tone}m{word}\x1b[0m" in output
+
+
+def test_locked_activity_rows_are_grey(monkeypatch):
+    config.save(config.Settings(activity_alert=False))
+    _, output = run_tui(monkeypatch, ["quit"])
+    assert f"\x1b[{present.GREY}m{t('tui.value.inactive')}\x1b[0m" in output

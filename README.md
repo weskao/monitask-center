@@ -81,7 +81,7 @@ bash activity/install.sh install
 
 個別報表設定可在 `~/.monitask-center/.env`(權限 600)加入 `.env.example` 所列的 `MONITASK_ACTIVITY_TIMEZONE`（Windows 時區名稱，預設 `Taipei Standard Time`）及選填的 `MONITASK_ACTIVITY_MEMBER_ID`（空白表示本人）。安裝時會把專案 `.env` 裡的 `MONITASK_ACTIVITY_*`、`TG_CHAT_ID` 合併進去(不覆寫既有值；`TG_BOT_TOKEN` 只在 Keychain 沒有 token 時才複製)。指定其他成員需登入帳號具有其報表權限；若伺服器選出的成員不符設定，程式會拒絕傳送。報表時區不會改變主設定的工作日與通知排程。每次排程都會重新讀取 `~/.monitask-center/.env`，更改這些值不需重新安裝；登入過期時重跑 `bash activity/run.sh login`。要立即以當下時間發送一次活動率（不受工作時窗限制），執行 `monitask-center activity`（或 `--activity`、`bash activity/run.sh now`）。此端點屬網站內部介面，格式仍可能改動。「最近紀錄」顯示報表中最新一段 10 分鐘的活動率及其起始時間（例如 14:25 傳送時顯示 14:20 那段）；該段尚未滿 10 分鐘時會標出實際分鐘數，計時已停止時則顯示最後一段的時間。
 
-**低活動率提醒：** 活動率排程每 10 分鐘喚醒一次，依 `--config` 的「活動率檢查頻率」(預設每 10 分鐘，從開始時間起算，例如 10:00 開始、每 40 分鐘即 10:00、10:40、11:20…)比對**今日活動**與「活動率提醒門檻」(預設 60%)。低於門檻時發一則 Telegram 提醒，說明今日活動率、門檻與差距、最近紀錄，並提醒確認 Monitask 是否仍在記錄、離座請暫停計時。同一段 10 分鐘紀錄只提醒一次(記在 `~/.monitask-center/activity-alert.json`，送達後才記錄，失敗則下次重試)。只在工作日的開始～結束時間內(含結束整點，午休略過除外)且 Telegram 開啟時檢查；整點報表照舊。只在提醒時段內抓取失敗不會發 Telegram，只寫日誌，避免每 10 分鐘重複告警；`monitask-center activity` 只發報表，不觸發提醒。
+**低活動率提醒：** 活動率排程每 10 分鐘喚醒一次，依 `--config` 的「活動率檢查頻率」(預設每 10 分鐘，從開始時間起算，例如 10:00 開始、每 40 分鐘即 10:00、10:40、11:20…)比對**今日活動**與「活動率提醒門檻」(預設 60%)。低於門檻時發一則 Telegram 提醒，說明今日活動率、門檻與差距、最近紀錄，並提醒確認 Monitask 是否仍在記錄、離座請暫停計時。同一段 10 分鐘紀錄只提醒一次(記在 `~/.monitask-center/activity-alert.json`，送達後才記錄，失敗則下次重試)。只在「活動率提醒」開啟、工作日的開始～結束時間內(含結束整點，午休略過除外)且 Telegram 開啟時檢查；整點報表照舊。只在提醒時段內抓取失敗不會發 Telegram，只寫日誌，避免每 10 分鐘重複告警；`monitask-center activity` 只發報表，不觸發提醒。
 
 **設定畫面的今日活動**：活動率排程每次抓到報表都把今日活動率與時間記在 `~/.monitask-center/activity-today.json`，`monitask-center --config` 的「目前狀態」據此顯示「今日活動: 64.45% (18:20 更新)」，百分比依數值上色(低於 60% 紅、低於 80% 橘、其餘綠，與 `monitask-center activity` 相同)；`monitask-center status` 也會列出(不上色)。今天還沒抓到資料、或記錄已超過 5 分鐘時(例如下班後排程不再更新)，`--config` 會在背景執行一次 `activity/run.sh record`(只記錄、不發 Telegram、不受工作時段限制，下班後與非工作日也照常抓取)，抓取期間此行以 spinner 顯示「讀取中…」，抓到後自動換成活動率；抓取失敗或沒裝活動率排程時不顯示此行。
 
@@ -106,6 +106,7 @@ bash activity/install.sh install
 | 午休略過 | 開/關(預設開)；開啟時午休內不提醒(自動暫停/播放需開啟「自動播放/暫停」) |
 | 午休開始 / 午休結束 | 午休時段 `[開始, 結束)`(預設 12 / 13) |
 | 下班詢問 / 下班詢問時間 | 開/關(預設開)；時間 18:00–20:30、每 30 分鐘一格(預設 18:30) |
+| 活動率提醒 | 開/關(預設開)；關閉時不比對、不提醒，下面兩列顯示灰色「— 已停用」且無法調整，原本的門檻與頻率保留在 `config.json`，重新開啟即恢復；整點報表不受影響 |
 | 活動率提醒門檻 | 今日活動率低於此值就提醒(預設 60%)；10%–90%、每 5% 一格，←→ 切換，不需輸入 |
 | 活動率檢查頻率 | 多久比對一次(預設 10 分鐘)；10–60 分鐘、每 10 分鐘一格，從開始時間起算，←→ 切換。兩者都在執行時讀取，不需重新載入排程 |
 | 語言 | 在 `locales/` 內現有的語言間切換 |
@@ -263,5 +264,6 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 - **從 1.9.1 以前升級**：舊版 `run.sh` 直接 import 目前安裝的套件(editable 安裝時就是 checkout 的 `src/`)。新版在「立即更新」或任何 CLI 指令時複製套件並改寫 `run.sh`，第二次執行不做任何事；整點 `check` 若本身已因此無法啟動，執行任一 `monitask-center` 指令即可修復。
 - **從 1.5.0 以前升級**：舊版的 job 從 checkout 執行。新版在「立即更新」的同步步驟，或任何 CLI 指令(`install`/`uninstall` 除外)時，會把 `MonitaskCenter.app`(保留 Accessibility 授權)、`pylibs`、`.env` 從 checkout 複製到上述目錄，產生 `run.sh`，再把 job 改指向它。若 `git pull` 已刪掉 checkout 內的 bundle，會用 Homebrew 的 python 重建並重新簽章，這時可能需要重新授予 Accessibility。整點 `check` 無法自行搬移(它本身就從舊位置執行)，所以 `git pull` 之後請執行任一 `monitask-center` 指令。
 - **低活動率提醒的排程升級**：舊版 `activity/install.sh` 裝的活動率 job 每小時喚醒一次。新版的整點 `check` 或任何 CLI 指令(`install`/`uninstall` 除外)會自動把它改成每 10 分鐘(只改排程，保留 Node 路徑與 checkout 位置)；沒裝活動率排程時不做任何事。失敗時會提示在 checkout 重跑 `bash activity/install.sh install`。
+- **「活動率提醒」開關(1.9.7 以前升級)**：舊的 `config.json` 沒有 `activity_alert`，讀取時視為開啟，行為與升級前相同，不需遷移；活動率排程複本的 `lib.js` 會在下一個指令自動更新後才認得此開關。
 - **活動率排程搬出 checkout(1.9.1 以前升級)**：舊版的活動率 job 直接執行 checkout 裡的 `activity/run.sh`，checkout 在「文件」等受保護位置時，launchd 會得到 `Operation not permitted`，整點報表與低活動率提醒都不會發出。新版在「立即更新」的同步步驟或任何 CLI 指令(`install`/`uninstall` 除外)時，以 job 原本的 Node 執行該 checkout 的 `bash activity/install.sh sync`：複製程式到 `~/Library/Application Support/MonitaskCenter/activity/`、搬移登入 session、合併 `.env`、把 job 改指向複本(第二次執行不做任何事)。整點 `check` 在 launchd 下通常讀不到 checkout，只會在 `monitask.log` 記一行失敗原因，下次在終端機執行任一指令時完成搬移。checkout 還沒 `git pull` 到有 `sync` 的版本時，提示先更新 checkout 再執行 `bash activity/install.sh install`。
 - 開發時用 `make install`(editable)：修改程式碼不需重新安裝，但背景排程跑的是複本，改完執行任一 `monitask-center` 指令(例如 `status`)才會同步；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。
