@@ -1,3 +1,13 @@
+## [1.11.0] - 2026-10-30
+
+### 🚀 Features
+
+- **vacation:** Support time-range leave entries
+
+### 📚 Documentation
+
+- **readme:** Describe low activity alerts
+- **images:** Refresh readme screenshots
 ## [1.10.0] - 2026-10-29
 
 ### 🚀 Features
