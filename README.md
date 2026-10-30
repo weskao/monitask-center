@@ -22,7 +22,7 @@
 
 活動率依計時期間的鍵盤與滑鼠操作計算；若正在工作，請確認 Monitask 仍在記錄，離座時請暫停計時。提醒門檻與檢查頻率可在 `monitask-center --config` 調整。
 
-![Telegram 低活動率提醒：今日活動率 64.22%，低於 65% 門檻，來源裝置為 Mac mini](docs/images/telegram-low-activity-alert.png)
+![Telegram 低活動率提醒：今日活動率 64.22%，低於 65% 門檻，來源裝置為 Mac mini](docs/images/telegram-low-activity-alert.jpeg)
 
 ## 核心原則
 
