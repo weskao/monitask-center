@@ -325,11 +325,11 @@ def _typed_tui(state: State, row: Row, stdin: IO[str], screen: _Screen,
 
 def _vacation_add(state: State, text: str) -> bool:
     try:
-        days = config.parse_dates(text)
+        entries = config.parse_vacation(text)
     except ValueError as exc:
         state.note = ("error", t(f"tui.error.vacation_{exc}"))
         return False
-    merged = tuple(sorted({*state.settings.vacation, *(d.isoformat() for d in days)}))
+    merged = tuple(sorted({*state.settings.vacation, *entries}))
     added = len(merged) - len(state.settings.vacation)
     if not _commit(state, replace(state.settings, vacation=merged)):
         return state.note[0] != "error"  # nothing new to add is not an error
@@ -338,13 +338,13 @@ def _vacation_add(state: State, text: str) -> bool:
 
 
 def _vacation_remove(state: State, text: str) -> bool:
-    day = config.parse_date(text)
-    if day is None or day.isoformat() not in state.settings.vacation:
+    entry = config.vacation_entry(text)
+    if entry is None or entry not in state.settings.vacation:
         state.note = ("error", t("tui.vacation.missing", day=text.strip()))
         return False
-    left = tuple(d for d in state.settings.vacation if d != day.isoformat())
+    left = tuple(e for e in state.settings.vacation if e != entry)
     if _commit(state, replace(state.settings, vacation=left)):
-        state.note = ("ok", t("tui.vacation.removed", day=day.isoformat()))
+        state.note = ("ok", t("tui.vacation.removed", day=entry))
         return True
     return False
 
@@ -409,13 +409,25 @@ def _main_lines(state: State, selected: int | None, out: IO[str]) -> list[str]:
     )
 
 
+def _vacation_span(entry: str) -> tuple[str, str]:
+    """A stored vacation entry -> (day, which part of it): the whole day or its time range."""
+    leave = config.parse_leave(entry)
+    if leave is None:
+        return entry, t("tui.vacation.all_day")
+    day, start, end = leave
+    if end == config.DAY_END:
+        return day.isoformat(), t("tui.vacation.from", start=config.clock(start))
+    return day.isoformat(), t("tui.vacation.span", start=config.clock(start), end=config.clock(end))
+
+
 def _vacation_lines(state: State, selected: int | None, out: IO[str],
                     editing: str | None = None) -> list[str]:
     days = state.settings.vacation
     numbered = selected is None
     add_value = _value(state, VACATION)
     items = [] if numbered else [(t("tui.vacation.add"), add_value, "value")]
-    items += [(f"{i:>2}) {d}" if numbered else d, "", "value") for i, d in enumerate(days, 1)]
+    items += [(f"{i:>2}) {day}" if numbered else day, span, "value")
+              for i, (day, span) in enumerate(map(_vacation_span, days), 1)]
     if numbered and not days:
         items = [(t("tui.value.vacation_none"), "", "muted")]
     message = state.note

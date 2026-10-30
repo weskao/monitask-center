@@ -3,7 +3,8 @@ import json
 import os
 import sys
 import types
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from datetime import time as dt_time
 from pathlib import Path
 
 import pytest
@@ -153,10 +154,10 @@ def routed(engine, monkeypatch):
     reads = []
     monkeypatch.setattr(engine.notify, "notify", lambda msg, tg=True: sent.append((msg, tg)))
     monkeypatch.setattr(engine.notify, "log", lambda msg: None)
-    monkeypatch.setattr(engine.workday, "workday_status", lambda d, s: engine.world.wd)
+    monkeypatch.setattr(engine.workday, "workday_status", lambda d, s, **kw: engine.world.wd)
     engine.world.wd = (True, "workday")
     engine.world.state = "timing"
-    engine.world.hour = 14
+    engine.world.hour, engine.world.minute = 14, 0
 
     def fake_read():
         reads.append(1)
@@ -170,7 +171,7 @@ def routed(engine, monkeypatch):
     class Clock:
         @staticmethod
         def now():
-            return types.SimpleNamespace(hour=engine.world.hour)
+            return datetime.combine(date.today(), dt_time(engine.world.hour, engine.world.minute))
     monkeypatch.setattr(engine, "datetime", Clock)
     engine.sent, engine.reads = sent, reads
     return engine
@@ -259,6 +260,28 @@ def test_cmd_check_gates_run_before_calendar(offline, hour, action):
     assert offline.cmd_check() == 0
     assert offline.sent == [] and offline.downloads == [] and offline.reads == []
     assert check.last_check()["action"] == action
+
+
+def _leave(span):
+    from monitask_center import config
+    config.save(config.Settings(vacation=(f"{date.today().isoformat()} {span}",)))
+
+
+def test_cmd_check_is_silent_inside_a_time_range_leave(offline):
+    from monitask_center import check
+    _leave("13:30~15:00")
+    offline.world.state = "paused"
+    offline.cmd_check()  # 14:00
+    assert offline.sent == [] and offline.reads == [] and offline.downloads == []
+    assert check.last_check()["action"] == "skip_vacation"
+
+
+def test_cmd_check_is_normal_again_once_the_leave_ends(offline):
+    from monitask_center import check
+    _leave("13:30~15:00")
+    offline.world.hour, offline.world.state = 15, "paused"
+    offline.cmd_check()
+    assert offline.reads and check.last_check()["action"] == "remind"
 
 
 def test_cmd_check_fail_open_warning_after_gates(offline):
@@ -438,6 +461,13 @@ def overtime(routed, monkeypatch):
     monkeypatch.setattr(routed.time, "sleep", waits.append)
     routed.answers, routed.waits = answers, waits
     return routed
+
+
+def test_overtime_is_skipped_during_a_time_range_leave(offline, overtime):
+    _leave("17:00~")
+    offline.world.hour, offline.world.minute = 18, 30
+    assert offline.cmd_overtime() == 0
+    assert offline.presses == [] and offline.sent == [] and offline.reads == []
 
 
 def test_overtime_timing_and_no_answer_pauses(overtime):

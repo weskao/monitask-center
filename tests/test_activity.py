@@ -293,9 +293,15 @@ def test_activity_sync_reports_a_failed_load(tmp_path):
 def test_activity_window_uses_shared_settings(hour, vacation, holiday, enabled, expected):
     config.save(config.Settings(start_hour=11, telegram=enabled,
                                 vacation=("2026-10-07",) if vacation else ()))
+    assert _work_window(f"{hour}:00", holiday)["ok"] is expected
+
+
+def _work_window(clock, holiday=False):
+    """workWindow() on 2026-10-07 at *clock* (Taipei), with that day cached as a workday or a holiday."""
     cache = config.home_dir() / "holidays/2026.json"
     cache.parent.mkdir(parents=True)
     cache.write_text(json.dumps([{"date": "20261007", "isHoliday": holiday}]))
+    hour, minute = map(int, clock.split(":"))
     script = """
 const OriginalDate = Date;
 global.Date = class extends OriginalDate {
@@ -303,10 +309,10 @@ global.Date = class extends OriginalDate {
 };
 console.log(JSON.stringify(require('./activity/lib').workWindow()));
 """
-    result = subprocess.run(["node", "-e", script, f"2026-10-07T{hour - 8:02d}:00:00Z"],
+    result = subprocess.run(["node", "-e", script, f"2026-10-07T{hour - 8:02d}:{minute:02d}:00Z"],
                             cwd=ROOT, env={**os.environ, "MONITASK_ACTIVITY_PYTHON": sys.executable},
                             capture_output=True, text=True, check=True)
-    assert json.loads(result.stdout)["ok"] is expected
+    return json.loads(result.stdout)
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="activity requires Node")
@@ -415,21 +421,7 @@ require('./activity/fetch');
 def test_activity_alert_ticks_follow_the_check_frequency(clock, minutes, report, alert):
     config.save(config.Settings(start_hour=11, activity_check_minutes=minutes,
                                 activity_alert_percent=55))
-    cache = config.home_dir() / "holidays/2026.json"
-    cache.parent.mkdir(parents=True)
-    cache.write_text(json.dumps([{"date": "20261007", "isHoliday": False}]))
-    hour, minute = map(int, clock.split(":"))
-    script = """
-const OriginalDate = Date;
-global.Date = class extends OriginalDate {
-  constructor(...args) { super(...(args.length ? args : [process.argv[1]])); }
-};
-console.log(JSON.stringify(require('./activity/lib').workWindow()));
-"""
-    result = subprocess.run(["node", "-e", script, f"2026-10-07T{hour - 8:02d}:{minute:02d}:00Z"],
-                            cwd=ROOT, env={**os.environ, "MONITASK_ACTIVITY_PYTHON": sys.executable},
-                            capture_output=True, text=True, check=True)
-    window = json.loads(result.stdout)
+    window = _work_window(clock)
     assert (window["ok"], window["alert"]) == (report, alert)
     assert window["threshold"] == 55
     assert window["state"] == str(config.home_dir() / "activity-alert.json")
@@ -437,22 +429,23 @@ console.log(JSON.stringify(require('./activity/lib').workWindow()));
 
 @pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("node"),
                     reason="activity runs on macOS with Node")
+@pytest.mark.parametrize("clock,report,alert", [
+    ("14:20", False, True),   # before the leave
+    ("14:30", False, False),  # the leave starts
+    ("15:00", False, False),
+    ("16:00", True, True),    # back: the end is exclusive
+])
+def test_activity_stops_inside_a_time_range_leave(clock, report, alert):
+    config.save(config.Settings(start_hour=11, vacation=("2026-10-07 14:30~16:00",)))
+    window = _work_window(clock)
+    assert (window["ok"], window["alert"]) == (report, alert)
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or not shutil.which("node"),
+                    reason="activity runs on macOS with Node")
 def test_activity_alert_switched_off_skips_the_check_but_keeps_the_report():
     config.save(config.Settings(start_hour=11, activity_alert=False))
-    cache = config.home_dir() / "holidays/2026.json"
-    cache.parent.mkdir(parents=True)
-    cache.write_text(json.dumps([{"date": "20261007", "isHoliday": False}]))
-    script = """
-const OriginalDate = Date;
-global.Date = class extends OriginalDate {
-  constructor(...args) { super(...(args.length ? args : [process.argv[1]])); }
-};
-console.log(JSON.stringify(require('./activity/lib').workWindow()));
-"""
-    result = subprocess.run(["node", "-e", script, "2026-10-07T03:00:00Z"],  # 11:00 Taipei: a report + alert tick
-                            cwd=ROOT, env={**os.environ, "MONITASK_ACTIVITY_PYTHON": sys.executable},
-                            capture_output=True, text=True, check=True)
-    window = json.loads(result.stdout)
+    window = _work_window("11:00")  # a report + alert tick
     assert (window["ok"], window["alert"]) == (True, False)
 
 

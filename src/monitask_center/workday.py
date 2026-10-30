@@ -113,10 +113,14 @@ def load_calendar(year: int, use_telegram: bool = True, send: bool = True):
 load_calendar.cache_clear = _fetch.cache_clear  # type: ignore[attr-defined]
 
 
-def workday_status(d: date, settings: config.Settings, notify: bool = True) -> tuple[bool, str]:
-    """Never raises: unexpected errors are fail-open. notify=False for read-only views."""
+def workday_status(d: date, settings: config.Settings, notify: bool = True,
+                   minute: int | None = None) -> tuple[bool, str]:
+    """Never raises: unexpected errors are fail-open. notify=False for read-only views.
+    *minute* (after midnight) also counts a time-range leave covering it as vacation."""
     try:
         vacation = {v for v in map(config.parse_date, settings.vacation) if v}
+        if minute is not None and settings.is_leave(d, minute):
+            vacation.add(d)
         if d in vacation:  # vacation beats the calendar: no download, no warning
             return decide(d, None, vacation)
         extra = {} if notify else {"send": False}
@@ -126,5 +130,5 @@ def workday_status(d: date, settings: config.Settings, notify: bool = True) -> t
         return True, "error(fail-open)"
 
 
-def peek_status(d: date, settings: config.Settings) -> tuple[bool, str]:
-    return workday_status(d, settings, notify=False)
+def peek_status(d: date, settings: config.Settings, minute: int | None = None) -> tuple[bool, str]:
+    return workday_status(d, settings, notify=False, minute=minute)

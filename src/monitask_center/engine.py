@@ -21,7 +21,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 import AppKit
@@ -211,12 +211,13 @@ def cmd_check() -> int:
         notify.log(note)
     if note := launchd.migrate_activity():
         notify.log(note)
-    hour = datetime.now().hour
+    now = datetime.now()
+    hour = now.hour
     # Pure window gate first: no calendar access (download / warning) and no state read.
     action = check.decide(hour, settings, (True, "workday"), "timing")
     wd, state, reason = None, "n/a", t("check.reason_unchecked")
     if action != "outside":
-        wd = workday.workday_status(date.today(), settings)
+        wd = workday.workday_status(now.date(), settings, minute=hour * 60 + now.minute)
         reason = reason_text(wd[1])
         action = check.decide(hour, settings, wd, "timing")
         if action in ("ok", "pause"):  # lunch needs the real state to know whether to pause
@@ -267,7 +268,8 @@ def cmd_overtime() -> int:
     if not settings.overtime_prompt:
         notify.log(t("overtime.disabled"))
         return 0
-    is_workday, reason = workday.workday_status(date.today(), settings)
+    now = datetime.now()
+    is_workday, reason = workday.workday_status(now.date(), settings, minute=now.hour * 60 + now.minute)
     if not is_workday:
         notify.log(t("overtime.skip_day", reason=reason_text(reason)))
         return 0

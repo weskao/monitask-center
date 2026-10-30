@@ -132,6 +132,15 @@ def test_plan_marks_lunch_and_next(monkeypatch, capsys):
     assert "2026-10-07 10:00" in out
 
 
+def test_plan_leaves_out_hours_inside_a_time_range_leave(monkeypatch, capsys):
+    _calendar(monkeypatch, (True, "workday"))
+    monkeypatch.setattr(status, "_next_check", lambda now, s: None)
+    config.save(config.Settings(vacation=(f"{WORKDAY.date()} 14:00~16:00",)))
+    assert cli.cmd_plan(WORKDAY) == 0
+    runs = next(line for line in capsys.readouterr().out.splitlines() if line.startswith(t("cli.plan.runs")))
+    assert "13:00" in runs and "14:00" not in runs and "15:00" not in runs and "16:00" in runs
+
+
 def test_plan_on_vacation_day_runs_nothing(monkeypatch, capsys):
     monkeypatch.setattr(workday, "peek_status",
                         lambda d, s: (False, "vacation") if d == WORKDAY.date() else (True, "workday"))

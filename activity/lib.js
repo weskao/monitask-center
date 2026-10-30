@@ -49,7 +49,7 @@ late = since % s.activity_check_minutes  # minutes past the check slot this tick
 alert = gate and s.activity_alert and late < 5 and 0 <= since - late <= (s.end_hour - s.start_hour) * 60
 reason = "outside"
 if ok or alert:
-    workday_ok, reason = workday.peek_status(date.fromisoformat(sys.argv[1]), s)
+    workday_ok, reason = workday.peek_status(date.fromisoformat(sys.argv[1]), s, minute=h * 60 + m)
     ok, alert = ok and workday_ok, alert and workday_ok
 print(json.dumps({"ok": ok, "alert": alert, "shift": reason, "threshold": s.activity_alert_percent,
                   "state": str(config.home_dir() / "activity-alert.json")}))`;

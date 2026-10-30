@@ -98,7 +98,7 @@ def cmd_plan(now: datetime | None = None) -> int:
     hours = s.check_hours()
     marks = [t("status.hours.lunch_mark" if s.is_lunch(h) else "status.hours.plain", hour=h) for h in hours]
     print(f"{t('status.label.hours')}: {' '.join(marks)}")
-    runs = [h for h in hours if not s.is_lunch(h)] if ok else []
+    runs = [h for h in hours if not s.is_lunch(h) and not s.is_leave(now.date(), h * 60)] if ok else []
     runs_text = " ".join(t("status.hours.plain", hour=h) for h in runs) or t("cli.plan.none")
     print(f"{t('cli.plan.runs')}: {runs_text}")
     nxt = status._next_check(now, s)

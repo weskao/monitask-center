@@ -87,6 +87,17 @@ def test_vacation_beats_calendar_without_download(monkeypatch):
     assert sent == []  # no calendar load, so no fail-open warning either
 
 
+def test_time_range_leave_counts_as_vacation_only_inside_it(monkeypatch):
+    _cache(2026, REC)
+    monkeypatch.setattr(workday, "_download", lambda *a: (_ for _ in ()).throw(AssertionError("no network")))
+    s = Settings(vacation=("2026-10-01 14:00~16:00",))
+    day = date(2026, 10, 1)
+    assert workday.workday_status(day, s, minute=14 * 60 + 30) == (False, "vacation")
+    assert workday.peek_status(day, s, minute=14 * 60) == (False, "vacation")
+    assert workday.workday_status(day, s, minute=16 * 60) == (True, "workday")
+    assert workday.workday_status(day, s) == (True, "workday")  # no time given: the day itself is a workday
+
+
 def test_notify_false_logs_but_sends_nothing(monkeypatch):
     sent, logged = [], []
     monkeypatch.setattr(workday, "notify", lambda *a: sent.append(a))

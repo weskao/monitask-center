@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from dataclasses import asdict, dataclass, fields, replace
 from datetime import date, datetime, timedelta
@@ -18,6 +19,9 @@ from . import i18n
 
 DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d")
 MAX_RANGE_DAYS = 366
+# A time-range leave: "<date> 14:00~16:00", or "<date> 15:30~" for the rest of the day.
+LEAVE_RE = re.compile(r"(\S+)\s+(\d{1,2}):(\d{2})\s*[~-]\s*(?:(\d{1,2}):(\d{2}))?")
+DAY_END = 24 * 60
 # Overtime prompt time, in minutes after midnight: 18:00 to 20:30 in half-hour steps.
 OVERTIME_EARLIEST = 18 * 60
 OVERTIME_LATEST = 20 * 60 + 30
@@ -67,7 +71,7 @@ class Settings:
     telegram_chat_id: str = ""       # an identifier, not a secret: stored here in plain JSON.
                                      # The bot token is NOT a field -- it lives in the OS
                                      # credential store, see monitask_center.telegram
-    vacation: tuple[str, ...] = ()   # ISO dates with no checks and no reminders
+    vacation: tuple[str, ...] = ()   # ISO dates, or time ranges (see LEAVE_RE), with no checks and no reminders
 
     def check_hours(self) -> list[int]:
         return [*range(self.start_hour, self.end_hour, self.interval_hours), self.end_hour]
@@ -79,6 +83,12 @@ class Settings:
     def is_lunch(self, hour: int) -> bool:
         """Runtime decision only: lunch never changes the launchd schedule."""
         return self.lunch_skip and self.lunch_start_hour <= hour < self.lunch_end_hour
+
+    def is_leave(self, d: date, minute: int) -> bool:
+        """Vacation at *minute* after midnight of *d*: a whole day, or inside a time range (end exclusive)."""
+        day = d.isoformat()
+        return any(e == day or ((leave := parse_leave(e)) is not None and leave[1] <= minute < leave[2])
+                   for e in self.vacation if e.startswith(day))
 
 
 def max_interval(start: int, end: int) -> int:
@@ -106,7 +116,7 @@ def validate(s: Settings) -> Settings:
     if s.activity_alert_percent not in ALERT_PERCENTS or s.activity_check_minutes not in ALERT_MINUTES:
         raise ValueError("activity_alert")
     language = s.language if s.language in i18n.available() else i18n.DEFAULT_LANGUAGE
-    days = sorted({d.isoformat() for d in map(parse_date, s.vacation) if d})
+    days = sorted({e for e in map(vacation_entry, s.vacation) if e})
     return replace(s, language=language, vacation=tuple(days))
 
 
@@ -240,3 +250,43 @@ def parse_dates(text: str) -> list[date]:
     if (last - first).days >= MAX_RANGE_DAYS:
         raise ValueError("range")
     return [first + timedelta(days=i) for i in range((last - first).days + 1)]
+
+
+def _minutes(hour: str, minute: str) -> int | None:
+    h, m = int(hour), int(minute)
+    return h * 60 + m if h < 24 and m < 60 else None
+
+
+def parse_leave(token: str) -> tuple[date, int, int] | None:
+    """A time range -> (day, start, end) in minutes after midnight, end exclusive; None when invalid."""
+    match = LEAVE_RE.fullmatch(token.strip())
+    if not match:
+        return None
+    day, start = parse_date(match[1]), _minutes(match[2], match[3])
+    end = _minutes(match[4], match[5]) if match[4] else DAY_END
+    if day is None or start is None or end is None or start >= end:
+        return None
+    return day, start, end
+
+
+def leave_text(day: date, start: int, end: int) -> str:
+    return f"{day.isoformat()} {clock(start)}~{'' if end == DAY_END else clock(end)}"
+
+
+def vacation_entry(token: str) -> str | None:
+    """A vacation entry in its stored form (ISO day or canonical time range); None when invalid."""
+    if ":" in token:
+        leave = parse_leave(token)
+        return leave_text(*leave) if leave else None
+    day = parse_date(token)
+    return day.isoformat() if day else None
+
+
+def parse_vacation(text: str) -> list[str]:
+    """parse_dates, or one time range like "2026-11-05 14:00~16:00" -> stored entries. Raises ValueError."""
+    if ":" not in text:
+        return [d.isoformat() for d in parse_dates(text)]
+    entry = vacation_entry(text)
+    if entry is None:
+        raise ValueError("time")
+    return [entry]

@@ -112,7 +112,7 @@ def _next_check(now: datetime, settings: config.Settings) -> datetime | None:
     for offset in range(NEXT_LOOKAHEAD_DAYS):
         day = (now + timedelta(days=offset)).date()
         ticks = [datetime(day.year, day.month, day.day, h) for h in hours]
-        ticks = [tick for tick in ticks if tick > now]
+        ticks = [tick for tick in ticks if tick > now and not settings.is_leave(day, tick.hour * 60)]
         if ticks and workday.peek_status(day, settings)[0]:
             return ticks[0]
     return None
@@ -180,7 +180,7 @@ def snapshot(settings: config.Settings, now: datetime | None = None, fetching: b
     calendar is peeked, so opening a status view never sends a notification."""
     now = now or datetime.now()
     today = now.date()
-    is_workday, reason = workday.peek_status(today, settings)
+    is_workday, reason = workday.peek_status(today, settings, minute=now.hour * 60 + now.minute)
     rows: list[Row] = []
 
     data = runner_status()

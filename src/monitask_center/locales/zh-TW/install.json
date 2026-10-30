@@ -60,7 +60,7 @@
   "status.lunch.window": "{start}:00-{end}:00",
   "status.lunch.off": "不略過",
   "status.vacation.none": "無",
-  "status.vacation.more": "…另 {count} 天",
+  "status.vacation.more": "…另 {count} 筆",
   "status.launchd.not_installed": "尚未安裝",
   "status.launchd.not_loaded": "已安裝但未載入",
   "status.launchd.stale": "已安裝但與設定不符,請重新安裝",

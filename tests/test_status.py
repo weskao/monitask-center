@@ -63,6 +63,14 @@ def test_next_check_skips_lunch_and_after_hours_and_off_days():
     assert rows(Settings(lunch_skip=False))["lunch"].value == t("status.lunch.off")
 
 
+def test_time_range_leave_skips_its_checks_and_shows_as_vacation_while_on_it():
+    s = Settings(vacation=("2026-10-02 13:00~15:00",))
+    assert rows(s, datetime(2026, 10, 2, 11, 30))["next"].value == "2026-10-02 15:00"
+    assert t("status.workday.yes") in rows(s, datetime(2026, 10, 2, 11, 30))["workday"].value
+    on_leave = rows(s, datetime(2026, 10, 2, 14, 10))["workday"]
+    assert on_leave.level == "info" and t("status.reason.vacation") in on_leave.value
+
+
 def test_vacation_today_is_not_a_workday_and_lists_overflow():
     days = tuple(f"2026-10-{d:02d}" for d in range(2, 12))
     r = rows(Settings(vacation=days))

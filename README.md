@@ -120,7 +120,7 @@ bash activity/install.sh install
 | 語言 | 在 `locales/` 內現有的語言間切換 |
 | 檢查更新 | 開/關(預設開)；開啟時背景查詢 GitHub 最新版本，有更新就在指令結束後詢問(見下) |
 | Telegram | 開：Telegram，失敗退回 macOS 通知；關：只用 macOS 通知 |
-| 休假日 | 子選單：新增單日(`2026-10-05`)或區間(`2026-10-05~2026-10-09`)、移除、列出；顯示儲存檔案 `config.json` 的絕對路徑(遵守 `MONITASK_CENTER_HOME`) |
+| 休假日 | 子選單：新增單日(`2026-10-05`)、區間(`2026-10-05~2026-10-09`)或時段(`2026-10-05 14:00~16:00`、`2026-10-05 15:30~`)、移除、列出；顯示儲存檔案 `config.json` 的絕對路徑(遵守 `MONITASK_CENTER_HOME`) |
 | 排程狀態 | 唯讀：launchd 是否安裝、載入、與設定一致 |
 | 狀態區 | 唯讀：今天是否工作日、下次檢查、Monitask 狀態、上次檢查 |
 
@@ -132,14 +132,16 @@ bash activity/install.sh install
 
 1. 執行 `monitask-center --config`。
 2. 用 ↑↓(或數字)移到「休假日」列，按 ⏎ 進入子選單。
-3. 選「+ 新增日期或區間」按 ⏎，輸入 `2026-10-05`(單日)或 `2026-10-05~2026-10-09`(區間，最多 366 天)，再按 ⏎。
-4. 要移除：在子選單移到該日期，按 ⏎ 或 `d`。非 TTY 的編號式選單改輸入 `a 日期` / `d 日期`。
+3. 選「+ 新增日期、區間或時段」按 ⏎，輸入 `2026-10-05`(單日)、`2026-10-05~2026-10-09`(區間，最多 366 天)、`2026-10-05 14:00~16:00`(某天的時段)或 `2026-10-05 15:30~`(幾點以後)，再按 ⏎。
+4. 要移除：在子選單移到該筆，按 ⏎ 或 `d`。非 TTY 的編號式選單改輸入 `a 日期或時段` / `d 項目`(例如 `d 2026-10-05 14:00~16:00`)。
 5. Esc 返回。每次修改立即存檔，下一次檢查就生效，不需重新安裝。
 
-**方式二：直接改檔案** `~/.monitask-center/config.json`(`MONITASK_CENTER_HOME` 設定時為 `$MONITASK_CENTER_HOME/config.json`)，編輯 `vacation` 陣列，每個日期一筆、格式 `YYYY-MM-DD`(檔案裡不支援區間)：
+**時段請假**：時段內的整點檢查、低活動率提醒、整點活動報表與下班詢問都跳過，與整天休假相同，但不會自動按暫停或開始。結束時間不含：`14:00~16:00` 的 16:00 整點檢查照常執行(暫停中就提醒)。時段只在排程原本醒來的時間點生效，不新增 launchd 排程。
+
+**方式二：直接改檔案** `~/.monitask-center/config.json`(`MONITASK_CENTER_HOME` 設定時為 `$MONITASK_CENTER_HOME/config.json`)，編輯 `vacation` 陣列，每筆是 `YYYY-MM-DD` 日期或 `YYYY-MM-DD HH:MM~HH:MM` / `YYYY-MM-DD HH:MM~` 時段(檔案裡不支援日期區間)：
 
 ```json
-"vacation": ["2026-10-05", "2026-10-06"]
+"vacation": ["2026-10-05", "2026-10-06", "2026-10-07 14:00~16:00", "2026-10-08 15:30~"]
 ```
 
 無法解析的日期會被丟棄，下次存檔時自動排序去重。
@@ -272,6 +274,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 - **從 1.9.1 以前升級**：舊版 `run.sh` 直接 import 目前安裝的套件(editable 安裝時就是 checkout 的 `src/`)。新版在「立即更新」或任何 CLI 指令時複製套件並改寫 `run.sh`，第二次執行不做任何事；整點 `check` 若本身已因此無法啟動，執行任一 `monitask-center` 指令即可修復。
 - **從 1.5.0 以前升級**：舊版的 job 從 checkout 執行。新版在「立即更新」的同步步驟，或任何 CLI 指令(`install`/`uninstall` 除外)時，會把 `MonitaskCenter.app`(保留 Accessibility 授權)、`pylibs`、`.env` 從 checkout 複製到上述目錄，產生 `run.sh`，再把 job 改指向它。若 `git pull` 已刪掉 checkout 內的 bundle，會用 Homebrew 的 python 重建並重新簽章，這時可能需要重新授予 Accessibility。整點 `check` 無法自行搬移(它本身就從舊位置執行)，所以 `git pull` 之後請執行任一 `monitask-center` 指令。
 - **低活動率提醒的排程升級**：舊版 `activity/install.sh` 裝的活動率 job 每小時喚醒一次。新版的整點 `check` 或任何 CLI 指令(`install`/`uninstall` 除外)會自動把它改成每 10 分鐘(只改排程，保留 Node 路徑與 checkout 位置)；沒裝活動率排程時不做任何事。失敗時會提示在 checkout 重跑 `bash activity/install.sh install`。
+- **時段請假**：沿用 `vacation` 陣列，只多接受時段格式，舊的設定不需遷移。活動率排程複本的 `lib.js` 與 `src/monitask_center` 會在下一個指令自動更新後才認得時段；更新前活動率偵測仍只看整天休假。降回舊版時，舊版會在下次存檔時丟棄時段項目。
 - **「活動率提醒」開關(1.9.7 以前升級)**：舊的 `config.json` 沒有 `activity_alert`，讀取時視為開啟，行為與升級前相同，不需遷移；活動率排程複本的 `lib.js` 會在下一個指令自動更新後才認得此開關。
 - **活動率排程搬出 checkout(1.9.1 以前升級)**：舊版的活動率 job 直接執行 checkout 裡的 `activity/run.sh`，checkout 在「文件」等受保護位置時，launchd 會得到 `Operation not permitted`，整點報表與低活動率提醒都不會發出。新版在「立即更新」的同步步驟或任何 CLI 指令(`install`/`uninstall` 除外)時，以 job 原本的 Node 執行該 checkout 的 `bash activity/install.sh sync`：複製程式到 `~/Library/Application Support/MonitaskCenter/activity/`、搬移登入 session、合併 `.env`、把 job 改指向複本(第二次執行不做任何事)。整點 `check` 在 launchd 下通常讀不到 checkout，只會在 `monitask.log` 記一行失敗原因，下次在終端機執行任一指令時完成搬移。checkout 還沒 `git pull` 到有 `sync` 的版本時，提示先更新 checkout 再執行 `bash activity/install.sh install`。
 - 開發時用 `make install`(editable)：修改程式碼不需重新安裝，但背景排程跑的是複本，改完執行任一 `monitask-center` 指令(例如 `status`)才會同步；若改了 launchd 內容(`launchd.py`)，到 `--config` 改任一排程設定或重跑 `monitask-center install` 即可套用。

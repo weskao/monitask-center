@@ -249,6 +249,26 @@ def test_vacation_add_range_remove_roundtrip():
     assert len(config.load().vacation) == 3  # over-long range rejected, nothing saved
 
 
+def test_vacation_time_ranges_add_list_and_remove():
+    script = (n("vacation") + "\na 2026-11-05 14:00~16:00\na 2026-11-07 15:30~\na 2026-11-05 16:00~14:00\n"
+              "d 2026-11-05 14:00-16:00\n\nq\n")
+    rc, output = numbered(script)
+    assert rc == 0
+    assert config.load().vacation == ("2026-11-07 15:30~",)
+    assert t("tui.error.vacation_time") in output
+    assert t("tui.vacation.span", start="14:00", end="16:00") in output  # listed before it was removed
+    assert t("tui.vacation.from", start="15:30") in output
+    assert t("tui.vacation.removed", day="2026-11-05 14:00~16:00") in output
+
+
+def test_vacation_menu_marks_whole_days_and_counts_entries(monkeypatch):
+    monkeypatch.setattr(menu, "_terminal_size", lambda _out: os.terminal_size((200, 24)))
+    state = menu.State(config.Settings(vacation=("2026-11-03", "2026-11-05 14:00~16:00")))
+    output = "\n".join(menu._vacation_lines(state, 0, io.StringIO()))
+    assert t("tui.vacation.all_day") in output and t("tui.value.vacation", count=2) in output
+    assert "2026-11-05 14:00~16:00" not in output  # the day and the time range are shown apart
+
+
 def test_vacation_submenu_in_the_tui(monkeypatch):
     keys = ["up", "up", "enter", "add", *"2026-10-05~2026-10-06", "enter",
             "add", *"bad", "enter", "add", "backspace", "backspace", "backspace", *"2026-12-25",

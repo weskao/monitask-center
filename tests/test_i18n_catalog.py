@@ -31,7 +31,7 @@ DYNAMIC = {
     "cli.help.": {*COMMANDS, "config"},
     "launchd.sync.": {"not_installed", "unchanged", "reinstalled"},  # launchd.sync() states
     "tui.error.": {"hours", "interval", "lunch", "overtime", "activity_alert"},      # config.validate() ValueError texts
-    "tui.error.vacation_": {"date", "range"},                        # config.parse_dates() ValueError texts
+    "tui.error.vacation_": {"date", "range", "time"},                # config.parse_vacation() ValueError texts
     "tui.row.": {row.key for row in menu.ROWS},
     "tui.help.": {row.key for row in menu.ROWS},
 }

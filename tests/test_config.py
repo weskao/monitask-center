@@ -96,6 +96,39 @@ def test_parse_dates():
             config.parse_dates(bad)
 
 
+def test_parse_vacation_accepts_days_ranges_and_time_ranges():
+    p = config.parse_vacation
+    assert p("2026/11/05") == ["2026-11-05"]
+    assert p("2026-11-05~2026-11-06") == ["2026-11-05", "2026-11-06"]
+    assert p("2026-11-05 14:00~16:00") == ["2026-11-05 14:00~16:00"]
+    assert p(" 20261105  9:05 - 16:30 ") == ["2026-11-05 09:05~16:30"]
+    assert p("2026-11-05 15:30~") == ["2026-11-05 15:30~"]  # open end: the rest of the day
+
+
+@pytest.mark.parametrize("bad", ["2026-11-05 16:00~14:00", "2026-11-05 14:00~14:00", "2026-11-05 25:00~",
+                                 "2026-11-05 14:60~", "nope 14:00~16:00", "2026-11-05 14:00", "2026-11-05 ~16:00"])
+def test_parse_vacation_rejects_bad_time_ranges(bad):
+    with pytest.raises(ValueError, match="time"):
+        config.parse_vacation(bad)
+
+
+def test_validate_keeps_time_ranges_in_canonical_form():
+    s = config.validate(Settings(vacation=("2026/11/05 9:00-10:00", "2026-11-05", "2026-11-05 16:00~12:00")))
+    assert s.vacation == ("2026-11-05", "2026-11-05 09:00~10:00")
+
+
+def test_is_leave_covers_full_days_and_time_ranges_with_exclusive_end():
+    from datetime import date
+    s = Settings(vacation=("2026-11-03", "2026-11-05 14:00~16:00", "2026-11-07 15:30~"))
+    day = date(2026, 11, 5)
+    assert not s.is_leave(day, 13 * 60 + 59)
+    assert s.is_leave(day, 14 * 60) and s.is_leave(day, 15 * 60 + 59)
+    assert not s.is_leave(day, 16 * 60)  # back from leave: the 16:00 check is a normal one
+    assert s.is_leave(date(2026, 11, 7), 23 * 60 + 59) and not s.is_leave(date(2026, 11, 7), 15 * 60 + 29)
+    assert s.is_leave(date(2026, 11, 3), 0)
+    assert not s.is_leave(date(2026, 11, 6), 15 * 60)
+
+
 def test_i18n_merges_dir_and_detects_duplicates(tmp_path, monkeypatch):
     loc = tmp_path / "locales"
     (loc / "zh-TW").mkdir(parents=True)
