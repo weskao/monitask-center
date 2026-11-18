@@ -1,3 +1,12 @@
+## [1.12.0] - 2026-11-18
+
+### 🚀 Features
+
+- **check:** Escalate repeat reminders with a picture
+
+### 📚 Documentation
+
+- **readme:** Describe escalated paused reminders
 ## [1.11.0] - 2026-10-30
 
 ### 🚀 Features
