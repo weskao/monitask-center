@@ -24,6 +24,14 @@
 
 ![Telegram 低活動率提醒：今日活動率 64.22%，低於 65% 門檻，來源裝置為 Mac mini](docs/images/telegram-low-activity-alert.jpeg)
 
+### Telegram 升級提醒(圖片 + 文字)
+
+同一天內已提醒過，下一次整點檢查時 Monitask 仍是暫停或沒開，就不再重複一般提醒，改發 🚨 升級提醒：Telegram 傳送一張固定的 1:1 提醒圖片(暫停圖示加上驚嘆號與時鐘)，文字作為圖片說明，並標示來源裝置。以暫停狀態為例，圖片下方的說明為「🚨 Monitask 仍是暫停狀態,已多次提醒,請立刻開始計時」，下一行為「🖥️ Mac mini」；Monitask 沒開時改為「🚨 Monitask 仍未執行,已多次提醒,請立刻開啟並開始計時」。
+
+每天第一次提醒仍是一般純文字，隔天重新計算；圖片傳送失敗時退回只發文字。觸發條件詳見[每個工作日會發生什麼](#每個工作日會發生什麼)的「升級提醒」。
+
+![Telegram 升級提醒：1:1 提醒圖片，說明為 Monitask 仍是暫停狀態，來源裝置為 Mac mini](docs/images/telegram-escalated-reminder.jpeg)
+
 ## 核心原則
 
 **平常只監看，只在兩個固定時機按播放/暫停。**
@@ -239,7 +247,7 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | `src/monitask_center/tui/` | `--config` 選單：`menu.py`、`present.py`、`keyreader.py`、`logo.py`(兩種尺寸的標題 logo) |
 | `src/monitask_center/locales/<lang>/*.json` | 各語言文字(目前 `zh-TW`) |
 | `tests/` | pytest 測試(含 i18n 守門) |
-| `docs/images/` | README 用的截圖：`config-menu.jpeg`(設定選單)、`telegram-notification.jpeg`(活動率通知) |
+| `docs/images/` | README 用的截圖：`config-menu.jpeg`(設定選單)、`telegram-notification.jpeg`(活動率通知)、`telegram-low-activity-alert.jpeg`(低活動率提醒)、`telegram-escalated-reminder.jpeg`(升級提醒) |
 | `activity/` | 活動率監控，**獨立的選用功能**，有自己的 launchd job；`install.sh` 把它複製到 `~/Library/Application Support/MonitaskCenter/activity/` 執行，讀主設定時使用同目錄的 python 與 `pylibs` |
 | `.env` | 舊版活動率設定；安裝活動率排程時合併進 `~/.monitask-center/.env`(不入版控) |
 | `~/.monitask-center/.env` | 僅在無認證存放區時的後備：`TG_BOT_TOKEN` + `TG_CHAT_ID` |
