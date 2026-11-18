@@ -49,6 +49,15 @@ launchd 在設定的整點喚醒 `check`（預設 10:00 ~ 18:00，每 1 小時�
 
 自動播放失敗不會留下標記，下一個整點會退回提醒通知。每次結果會記錄到 `~/.monitask-center/last-check.json`。
 
+**升級提醒：** 同一天內，上一次檢查已發過提醒、這次 Monitask 仍是暫停或沒開，就不再發一般提醒，改發 🚨 升級文案，並在 Telegram 附上一張固定的 1:1 提醒圖片(文字作為圖片說明)。每天第一次提醒、以及隔天重新開始的提醒仍是一般文案；圖片傳送失敗時退回只發文字。範例(下方「🖥️」為來源主機名)：
+
+```text
+🚨 Monitask 仍是暫停狀態,已多次提醒,請立刻開始計時
+🖥️ Mac mini
+```
+
+Monitask 沒開時的文案為「🚨 Monitask 仍未執行,已多次提醒,請立刻開啟並開始計時」。一般提醒則是「Monitask 目前已暫停,請記得開始計時」／「Monitask 尚未執行,請記得開啟並開始計時」。
+
 ## 下班詢問(overtime)
 
 獨立的 launchd job `overtime`，每天在「下班詢問時間」(預設 18:30，可設 18:00–20:30、每 30 分鐘一格)執行：
@@ -259,12 +268,13 @@ launchctl kickstart -k gui/$(id -u)/com.monitask-center.check
 | 事件 | 通知 |
 |------|------|
 | Monitask 已暫停 / 沒有執行(工作日、非午休) | 提醒 |
+| 同一天內已提醒過、仍未計時 | 🚨 升級提醒，Telegram 附 1:1 圖片 |
 | 無法讀取 Monitask 狀態(Period 檔案或時間戳記異常) | 警告 |
 | 政府行事曆無法取得(fail-open) | 警告，每天最多一次 |
 | 計時中 / 視窗隱藏 / 午休 / 放假 / 休假 / 時段外 | 不通知，只寫日誌 |
 | 今日活動率低於「活動率提醒門檻」(需安裝活動率排程) | Telegram 提醒並說明，同一段紀錄一次 |
 
-通知先走 Telegram(`telegram-kit` 直連 Bot API；token 取自認證存放區，其次為 `.env` 的 `TG_BOT_TOKEN`；chat id 取自 `config.json`，其次為 `TG_CHAT_ID`；訊息附主機名)，Telegram 關閉或傳送失敗時退回 macOS 通知中心。只發文字，不截圖、不外傳畫面內容。
+通知先走 Telegram(`telegram-kit` 直連 Bot API；token 取自認證存放區，其次為 `.env` 的 `TG_BOT_TOKEN`；chat id 取自 `config.json`，其次為 `TG_CHAT_ID`；訊息附主機名)，Telegram 關閉或傳送失敗時退回 macOS 通知中心。除升級提醒附一張固定的提醒圖片外只發文字，不截圖、不外傳畫面內容。
 
 ## 維護注意
 
