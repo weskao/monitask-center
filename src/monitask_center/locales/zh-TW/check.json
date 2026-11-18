@@ -7,6 +7,8 @@
   "config.corrupt": "設定檔無法讀取,已改用預設值:{path}({reason})",
   "check.remind_paused": "Monitask 目前已暫停,請記得開始計時",
   "check.remind_not_running": "Monitask 尚未執行,請記得開啟並開始計時",
+  "check.remind_again_paused": "🚨 Monitask 仍是暫停狀態,已多次提醒,請立刻開始計時",
+  "check.remind_again_not_running": "🚨 Monitask 仍未執行,已多次提醒,請立刻開啟並開始計時",
   "check.play_ok": "Monitask 已自動開始計時",
   "check.play_failed": "Monitask 自動開始計時失敗,請手動確認",
   "check.pause_ok": "午休:Monitask 已自動暫停",

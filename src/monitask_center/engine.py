@@ -34,6 +34,7 @@ from monitask_center.i18n import t
 from monitask_center.status import action_text, reason_text, state_text
 
 APP_NAME = "Monitask"
+REMIND_IMAGE = Path(__file__).parent / "assets" / "remind.jpeg"  # 1:1; sent from the 2nd reminder on
 AX_API_DISABLED = -25211
 AX_TIMEOUT_S = 10.0
 LAUNCH_TIMEOUT_S = 30   # max wait after `open -a` for the Play/Pause controls to appear
@@ -230,8 +231,15 @@ def cmd_check() -> int:
     notify.log(t("check.decision", hour=hour, action=action_text(action),
                  state=state_text(state), reason=reason))
     if action == "remind":
-        key = "check.remind_paused" if state == "paused" else "check.remind_not_running"
-        notify.notify(t(key), settings.telegram)
+        prev = check.last_check()  # still the previous run: recorded below
+        again = bool(prev and prev["action"] == "remind" and prev["time"].startswith(f"{now:%Y-%m-%d}"))
+        paused = state == "paused"
+        if again:  # still not timing after a reminder today: louder, with the picture
+            key = "check.remind_again_paused" if paused else "check.remind_again_not_running"
+            notify.notify(t(key), settings.telegram, photo=REMIND_IMAGE)
+        else:
+            key = "check.remind_paused" if paused else "check.remind_not_running"
+            notify.notify(t(key), settings.telegram)
     elif action == "warn_unknown":
         notify.notify(t("check.warn_unknown", error=_last_error or state), settings.telegram)
     elif action in ("play", "pause"):

@@ -124,6 +124,15 @@ def send(text: str, chat_id: str = "") -> bool:
         return False
 
 
+def send_photo(path: Path, caption: str, chat_id: str = "") -> bool:
+    """Send the image at *path* with *caption*. ``False`` on any failure; never raises."""
+    tok, chat = resolve(chat_id)
+    try:
+        return telegram_kit.send_photo(tok, chat, path, caption)
+    except Exception:  # noqa: BLE001 - a notification must never crash a job
+        return False
+
+
 def read_token(prompt: str) -> str | None:
     """Read a token without echo. ``None`` when echo cannot be disabled or input ends."""
     return telegram_kit.read_hidden(prompt)

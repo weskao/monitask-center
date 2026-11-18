@@ -152,7 +152,10 @@ def routed(engine, monkeypatch):
     """cmd_check with the clock, calendar and notifier replaced by recorders."""
     sent = []
     reads = []
-    monkeypatch.setattr(engine.notify, "notify", lambda msg, tg=True: sent.append((msg, tg)))
+    photos = []
+    monkeypatch.setattr(engine.notify, "notify",
+                        lambda msg, tg=True, photo=None: sent.append((msg, tg)) or photos.append(photo))
+    engine.photos = photos
     monkeypatch.setattr(engine.notify, "log", lambda msg: None)
     monkeypatch.setattr(engine.workday, "workday_status", lambda d, s, **kw: engine.world.wd)
     engine.world.wd = (True, "workday")
@@ -418,6 +421,26 @@ def test_cmd_check_mid_session_paused_only_reminds(routed):
     routed.cmd_check()
     assert routed.presses == []
     assert routed.sent[0][0] == routed.t("check.remind_paused")
+
+
+def test_cmd_check_repeat_reminder_escalates_with_the_picture(routed):
+    routed.world.hour, routed.world.state = 14, "paused"
+    routed.cmd_check()
+    routed.world.hour = 15
+    routed.cmd_check()
+    assert [m for m, _ in routed.sent] == [routed.t("check.remind_paused"), routed.t("check.remind_again_paused")]
+    assert routed.photos == [None, routed.REMIND_IMAGE]
+    assert routed.REMIND_IMAGE.is_file()
+
+
+def test_cmd_check_reminder_after_a_quiet_check_is_not_escalated(routed):
+    routed.world.hour, routed.world.state = 14, "paused"
+    routed.cmd_check()
+    routed.world.hour, routed.world.state = 15, "timing"
+    routed.cmd_check()
+    routed.world.hour, routed.world.state = 16, "paused"
+    routed.cmd_check()
+    assert routed.photos == [None, None]
 
 
 @pytest.mark.parametrize("state", ["timing", "hidden"])

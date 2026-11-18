@@ -12,6 +12,7 @@ import os
 import socket
 import subprocess
 from datetime import datetime
+from pathlib import Path
 
 from . import config, telegram
 from .i18n import t
@@ -78,11 +79,16 @@ def telegram_message(message: str, chat_id: str = "") -> bool:
     return telegram.send(message, chat_id or config.load().telegram_chat_id)
 
 
-def notify(message: str, use_telegram: bool = True, chat_id: str = "") -> None:
+def notify(message: str, use_telegram: bool = True, chat_id: str = "",
+           photo: Path | None = None) -> None:
+    """*photo*, when given, goes out with the text as its caption; a failed photo falls back to plain text."""
     delivered = False
     if use_telegram:
+        text = f"{message}\n🖥️ {host_name()}"
         try:
-            delivered = telegram_message(f"{message}\n🖥️ {host_name()}", chat_id)
+            delivered = bool(photo) and telegram.send_photo(
+                photo, text, chat_id or config.load().telegram_chat_id)
+            delivered = delivered or telegram_message(text, chat_id)
         except Exception as exc:  # noqa: BLE001 - a notification must never crash a job
             log(t("notify.telegram_error", error=exc))
     if not delivered:

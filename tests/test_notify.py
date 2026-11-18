@@ -152,3 +152,19 @@ def test_log_is_file_only_unless_env(monkeypatch, capsys):
     monkeypatch.setenv("MONITASK_CENTER_LOG_STDOUT", "1")
     notify.log("loud")
     assert "loud" in capsys.readouterr().out
+
+
+def test_photo_goes_out_with_the_text_as_caption(monkeypatch, macos, tmp_path):
+    shots = []
+    monkeypatch.setattr(telegram, "send_photo", lambda p, cap, chat="": shots.append((p, cap)) or True)
+    monkeypatch.setattr(telegram, "send", lambda *a: pytest.fail("no text copy once the photo is delivered"))
+    notify.notify("m", photo=tmp_path / "x.png")
+    assert shots == [(tmp_path / "x.png", "m\n🖥️ host")] and macos == []
+
+
+def test_failed_photo_falls_back_to_plain_text(monkeypatch, macos, tmp_path):
+    texts = []
+    monkeypatch.setattr(telegram, "send_photo", lambda *a: False)
+    monkeypatch.setattr(telegram, "send", lambda text, chat_id="": texts.append(text) or True)
+    notify.notify("m", photo=tmp_path / "missing.png")
+    assert texts == ["m\n🖥️ host"] and macos == []
